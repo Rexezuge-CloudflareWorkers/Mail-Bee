@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "allowJs": false,
+    "checkJs": false,
+    "noEmit": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@mail-bee/background": ["./src"],
+      "@mail-bee/background/*": ["./src/*"],
+      "@mail-bee/backend-data": ["../../packages/backend-data/src"],
+      "@mail-bee/backend-data/*": ["../../packages/backend-data/src/*"],
+      "@mail-bee/backend-runtime": ["../../packages/backend-runtime/src"],
+      "@mail-bee/backend-runtime/*": ["../../packages/backend-runtime/src/*"],
+      "@mail-bee/backend-services": ["../../packages/backend-services/src"],
+      "@mail-bee/backend-services/*": ["../../packages/backend-services/src/*"],
+      "@mail-bee/provider-clients": ["../../packages/provider-clients/src"],
+      "@mail-bee/provider-clients/*": ["../../packages/provider-clients/src/*"],
+      "@mail-bee/shared": ["../../packages/shared/src"],
+      "@mail-bee/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": ["../../worker-configuration.d.ts", "../../packages/backend-runtime/src/env.d.ts", "src/**/*.ts"],
+  "exclude": ["node_modules"]
+}

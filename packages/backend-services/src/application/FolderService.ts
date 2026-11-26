@@ -1,0 +1,42 @@
+import type { UserScope } from '@mail-bee/backend-data/dao';
+import { ConnectedApplicationDAO } from '@mail-bee/backend-data/dao';
+import type { D1Queryable } from '@mail-bee/backend-data/utils';
+import { NotFoundError } from '@rexezuge/errors';
+import type { ConnectedApplication } from '@mail-bee/shared/model';
+import { EmailProviderRegistry } from '../provider/EmailProviderRegistry';
+import type { ProviderFolder } from '../provider/IEmailProvider';
+import { OAuth2AccessTokenService } from '../oauth2/OAuth2AccessTokenService';
+
+class FolderService {
+  constructor(private readonly env: FolderServiceEnv) {}
+
+  async listFolders(scope: UserScope, applicationId: string): Promise<ProviderFolder[]> {
+    const masterKey: string = await this.env.AES_ENCRYPTION_KEY_SECRET.get();
+    const applicationDAO = new ConnectedApplicationDAO(this.env.DB, masterKey);
+    const application: ConnectedApplication | undefined = await applicationDAO.getByIdForUser(applicationId, scope);
+    if (!application) {
+      throw new NotFoundError('Connected application was not found.');
+    }
+    const accessToken: string = await new OAuth2AccessTokenService(this.env).getAccessToken(application.applicationId);
+    return EmailProviderRegistry.get(application.providerId).listFolders(accessToken);
+  }
+}
+
+const FolderServiceFactory = {
+  create(env: FolderServiceEnv): FolderService {
+    return new FolderService(env);
+  },
+};
+
+interface FolderServiceEnv {
+  DB: D1Queryable;
+  AES_ENCRYPTION_KEY_SECRET: SecretsStoreSecret;
+  OAUTH2_TOKEN_CACHE: KVNamespace;
+  OAUTH2_TOKEN_REFRESHERS: DurableObjectNamespace;
+  OAUTH2_ACCESS_TOKEN_MIN_VALID_SECONDS?: string;
+}
+
+export { FolderService, FolderServiceFactory };
+export type { FolderServiceEnv };
+
+export { type ProviderFolder } from '../provider/IEmailProvider';

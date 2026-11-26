@@ -1,0 +1,89 @@
+import { ProviderSubscriptionDAO } from '@mail-bee/backend-data/dao';
+import type { D1Queryable } from '@mail-bee/backend-data/utils';
+import type { EmailQueueMessage, ProviderSubscription } from '@mail-bee/shared/model';
+import { BaseWebhookService } from './BaseWebhookService';
+
+class OutlookWebhookService extends BaseWebhookService {
+  public static async handleNotifications(
+    applicationId: string,
+    notifications: OutlookNotification[],
+    env: OutlookWebhookEnv,
+    callbackBaseUrl?: string,
+  ): Promise<void> {
+    const subscriptionDAO = new ProviderSubscriptionDAO(env.DB);
+    await this.handleNotificationTemplate<OutlookNotification>(
+      notifications,
+      subscriptionDAO,
+      env.EMAIL_EVENTS_QUEUE,
+      (notification) =>
+        this.getAuthorizedSubscription(applicationId, notification.subscriptionId, notification.clientState, subscriptionDAO, true),
+      (notification) => {
+        const messageId: string | undefined = notification.resourceData?.id || this.extractMessageId(notification.resource);
+        if (!messageId) return;
+        return {
+          type: 'outlook-notification',
+          applicationId,
+          subscriptionId: notification.subscriptionId,
+          messageId,
+          callbackBaseUrl,
+        } satisfies EmailQueueMessage;
+      },
+    );
+  }
+
+  public static async handleLifecycleNotifications(
+    applicationId: string,
+    notifications: OutlookLifecycleNotification[],
+    env: OutlookLifecycleWebhookEnv,
+  ): Promise<void> {
+    const subscriptionDAO = new ProviderSubscriptionDAO(env.DB);
+    for (const notification of notifications) {
+      const subscription: ProviderSubscription = await this.getAuthorizedSubscription(
+        applicationId,
+        notification.subscriptionId,
+        notification.clientState,
+        subscriptionDAO,
+        Boolean(notification.clientState),
+      );
+      if (notification.lifecycleEvent === 'subscriptionRemoved' || notification.lifecycleEvent === 'missed') {
+        await subscriptionDAO.markError(subscription.subscriptionId, `Outlook lifecycle event: ${notification.lifecycleEvent}`);
+      }
+    }
+  }
+
+  public static extractMessageId(resource: string | undefined): string | undefined {
+    if (!resource) return undefined;
+    const messagesSegment: string = '/messages/';
+    const segmentIndex: number = resource.toLowerCase().lastIndexOf(messagesSegment);
+    if (segmentIndex === -1) return undefined;
+    const messageId: string = resource.slice(segmentIndex + messagesSegment.length);
+    return messageId.includes('/') ? undefined : messageId;
+  }
+}
+
+interface OutlookNotification {
+  subscriptionId: string;
+  clientState?: string;
+  changeType?: string;
+  resource?: string;
+  resourceData?: {
+    id?: string;
+  };
+}
+
+interface OutlookLifecycleNotification {
+  subscriptionId: string;
+  clientState?: string;
+  lifecycleEvent?: string;
+}
+
+interface OutlookLifecycleWebhookEnv {
+  DB: D1Queryable;
+}
+
+interface OutlookWebhookEnv extends OutlookLifecycleWebhookEnv {
+  EMAIL_EVENTS_QUEUE: Queue<EmailQueueMessage>;
+}
+
+export { OutlookWebhookService };
+export type { OutlookLifecycleNotification, OutlookLifecycleWebhookEnv, OutlookNotification, OutlookWebhookEnv };

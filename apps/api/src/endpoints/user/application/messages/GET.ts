@@ -1,0 +1,39 @@
+import { IUserRoute } from '@/endpoints/IUserRoute';
+import type { IUserEnv, IRequest, IResponse, RouteContext } from '@/endpoints/IUserRoute';
+import { Tokens, createRequestScope } from '@mail-bee/backend-services/composition';
+import type { ProcessedMessage } from '@mail-bee/shared/model';
+import type { ProcessedMessageStatus } from '@mail-bee/shared/constants';
+
+class ListProcessedMessagesRoute extends IUserRoute<ListProcessedMessagesRequest, ListProcessedMessagesResponse, ListProcessedMessagesEnv> {
+  schema = {
+    tags: ['Processing'],
+    summary: 'List processed messages for the authenticated user',
+    responses: {
+      '200': { description: 'Processed messages' },
+    },
+  };
+
+  protected async handleRequest(
+    request: ListProcessedMessagesRequest,
+    env: ListProcessedMessagesEnv,
+    cxt: RouteContext<ListProcessedMessagesEnv>,
+  ): Promise<ListProcessedMessagesResponse> {
+    const scope = createRequestScope(env);
+    return scope.get(Tokens.ProcessingService).listProcessedMessages(this.getAuthenticatedUser(cxt), {
+      applicationId: this.getQueryParam(request, 'applicationId'),
+      status: this.getQueryParam(request, 'status') as ProcessedMessageStatus | undefined,
+      cursor: this.getQueryParam(request, 'cursor'),
+    });
+  }
+}
+
+type ListProcessedMessagesRequest = IRequest;
+
+interface ListProcessedMessagesResponse extends IResponse {
+  messages: ProcessedMessage[];
+  nextCursor?: string;
+}
+
+type ListProcessedMessagesEnv = IUserEnv;
+
+export { ListProcessedMessagesRoute };
