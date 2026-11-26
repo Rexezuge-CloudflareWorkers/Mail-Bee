@@ -1,0 +1,34 @@
+{
+  "name": "@mail-bee/provider-clients",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./email-content": "./src/email-content/index.ts",
+    "./fastmail": "./src/fastmail/index.ts",
+    "./gmail": "./src/gmail/index.ts",
+    "./imap": "./src/imap/index.ts",
+    "./oauth2": "./src/oauth2/index.ts",
+    "./outlook": "./src/outlook/index.ts",
+    "./webhook": "./src/webhook/index.ts",
+    "./yahoo": "./src/yahoo/index.ts",
+    "./google-drive": "./src/google-drive/index.ts",
+    "./onedrive": "./src/onedrive/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mail-bee/shared": "workspace:*",
+    "@rexezuge/errors": "1.9.4",
+    "@rexezuge/shared": "1.9.4",
+    "html-to-text": "10.0.1"
+  },
+  "devDependencies": {
+    "@types/html-to-text": "9.0.4",
+    "@types/node": "26.6.6",
+    "typescript": "6.0.3"
+  }
+}

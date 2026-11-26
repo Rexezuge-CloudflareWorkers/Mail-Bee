@@ -1,0 +1,441 @@
+import {
+  CONNECTED_APPLICATION_STATUS_CONNECTED,
+  CONNECTED_APPLICATION_STATUS_ERROR,
+  CONNECTION_METHOD_IMAP_PASSWORD,
+  CONNECTION_METHOD_OAUTH2,
+} from '@mail-bee/shared/constants';
+import { decryptData, encryptData } from '../crypto';
+import { DatabaseError } from '@rexezuge/errors';
+import type {
+  ConnectedApplication,
+  ConnectedApplicationCredentials,
+  ConnectedApplicationInternal,
+  ConnectedApplicationMetadata,
+  EmailProcessingRule,
+  OAuth2Credentials,
+  SenderDomainFilters,
+} from '@mail-bee/shared/model';
+import { LocaleUtil, TimestampUtil, TimeZoneUtil, UUIDUtil } from '@mail-bee/shared/utils';
+import { EncryptedDAO } from './BaseDAO';
+import { ConnectedApplicationFlags } from './ConnectedApplicationFlags';
+import { METADATA_CONFIG_KEYS, assembleMetadata, migrateLegacyExcludeRules } from './ConnectedApplicationMetadataMapper';
+import type { MetadataConfigMap, MetadataConfigWriter } from './ConnectedApplicationMetadataMapper';
+import { userScopeSql } from './userScope';
+import type { UserScope, UserScopeSql } from './userScope';
+
+class ConnectedApplicationDAO extends EncryptedDAO {
+  private flags(): ConnectedApplicationFlags {
+    return new ConnectedApplicationFlags(this.database);
+  }
+
+  public async create(
+    scope: UserScope,
+    displayName: string,
+    providerId: string,
+    connectionMethod: string,
+    credentials: ConnectedApplicationCredentials,
+    status: string,
+    gmailPubsubTopicName?: string | null,
+    enabledFeatures?: string[] | null,
+    timeZone?: string | null,
+    imapConfig?: {
+      host?: string | null;
+      port?: number | null;
+      username?: string | null;
+      smtpHost?: string | null;
+      smtpPort?: number | null;
+    } | null,
+    contentLanguage?: string | null,
+  ): Promise<ConnectedApplicationMetadata> {
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    const applicationId: string = UUIDUtil.getRandomUUID();
+    const encrypted = await encryptData(JSON.stringify(credentials), this.masterKey);
+    await this.run(
+      ` INSERT INTO connected_applications (application_id, user_email, user_id, provider_email, display_name, provider_id, connection_method, encrypted_credentials, credentials_iv, status, context_indexing_enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) `,
+      [
+        applicationId, // The frozen anchor stays in `user_email` so the pre-existing
+        // `FOREIGN KEY (user_email) REFERENCES users(email)` and the
+        // Vectorize namespace keep resolving. `user_id` is the ownership key.
+        scope.anchorEmail,
+        scope.id,
+        null,
+        displayName,
+        providerId,
+        connectionMethod,
+        encrypted.encrypted,
+        encrypted.iv,
+        status,
+        1,
+        now,
+        now,
+      ],
+    );
+    if (gmailPubsubTopicName) {
+      await this.setProviderConfig(applicationId, 'gmail_pubsub_topic_name', gmailPubsubTopicName, now);
+    }
+    if (enabledFeatures && enabledFeatures.length > 0) {
+      await this.setProviderConfig(applicationId, 'oauth2_enabled_features', JSON.stringify(enabledFeatures), now);
+    }
+    if (timeZone) {
+      await this.setProviderConfig(applicationId, 'calendar_time_zone', TimeZoneUtil.normalize(timeZone), now);
+    }
+    if (contentLanguage) {
+      await this.setProviderConfig(applicationId, 'content_language', LocaleUtil.normalize(contentLanguage), now);
+    }
+    if (imapConfig) {
+      await this.saveImapConfig(applicationId, imapConfig, now);
+    }
+    const application: ConnectedApplicationMetadata | undefined = await this.getMetadataByIdForUser(applicationId, scope);
+    if (!application) {
+      throw new DatabaseError('Failed to load connected application after create.');
+    }
+    return application;
+  }
+
+  public async listMetadataByUserScope(scope: UserScope): Promise<ConnectedApplicationMetadata[]> {
+    const where: UserScopeSql = userScopeSql(scope);
+    const rows: ConnectedApplicationInternal[] = await this.all<ConnectedApplicationInternal>(
+      ` SELECT application_id, user_email, provider_email, display_name, provider_id, connection_method, encrypted_credentials, credentials_iv, status, context_indexing_enabled, rag_retrieval_enabled, max_context_documents, last_error_acknowledged_at, context_last_error_acknowledged_at, created_at, updated_at FROM connected_applications WHERE ${where.clause} ORDER BY updated_at DESC, created_at DESC `,
+      [...where.bindings],
+    );
+    return Promise.all(rows.map((row: ConnectedApplicationInternal): Promise<ConnectedApplicationMetadata> => this.toMetadata(row)));
+  }
+
+  public async countByUserScope(scope: UserScope): Promise<number> {
+    const where: UserScopeSql = userScopeSql(scope);
+    const row: { count: number } | null = await this.first<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM connected_applications WHERE ${where.clause}`,
+      [...where.bindings],
+    );
+    return row?.count ?? 0;
+  }
+
+  public async listContextEnabledApplicationIdsByUserScope(scope: UserScope): Promise<string[]> {
+    const where: UserScopeSql = userScopeSql(scope);
+    const rows: Array<{ application_id: string }> = await this.all<{ application_id: string }>(
+      ` SELECT application_id FROM connected_applications WHERE ${where.clause} AND context_indexing_enabled = 1 `,
+      [...where.bindings],
+    );
+    return rows.map((row: { application_id: string }): string => row.application_id);
+  }
+
+  public async getMetadataByIdForUser(applicationId: string, scope: UserScope): Promise<ConnectedApplicationMetadata | undefined> {
+    const row: ConnectedApplicationInternal | undefined = await this.getRowById(applicationId, scope);
+    return row ? await this.toMetadata(row) : undefined;
+  }
+
+  public async getById(applicationId: string): Promise<ConnectedApplication | undefined> {
+    const row: ConnectedApplicationInternal | undefined = await this.getRowById(applicationId);
+    return row ? await this.toApplication(row) : undefined;
+  }
+
+  public async getByIdForUser(applicationId: string, scope: UserScope): Promise<ConnectedApplication | undefined> {
+    const row: ConnectedApplicationInternal | undefined = await this.getRowById(applicationId, scope);
+    return row ? await this.toApplication(row) : undefined;
+  }
+
+  public async updateForUser(
+    applicationId: string,
+    scope: UserScope,
+    displayName: string,
+    credentials: ConnectedApplicationCredentials,
+    status: string,
+    gmailPubsubTopicName?: string | null,
+    enabledFeatures?: string[] | null,
+    senderDomainFilters?: SenderDomainFilters | null,
+    timeZone?: string | null,
+    imapConfig?: {
+      host?: string | null;
+      port?: number | null;
+      username?: string | null;
+      smtpHost?: string | null;
+      smtpPort?: number | null;
+    } | null,
+    autoExecuteActionTypes?: string[] | null,
+    contentLanguage?: string | null,
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    const encrypted = await encryptData(JSON.stringify(credentials), this.masterKey);
+    const where: UserScopeSql = userScopeSql(scope);
+    await this.run(
+      ` UPDATE connected_applications SET display_name = ?, encrypted_credentials = ?, credentials_iv = ?, status = ?, updated_at = ? WHERE application_id = ? AND ${where.clause} `,
+      [displayName, encrypted.encrypted, encrypted.iv, status, now, applicationId, ...where.bindings],
+    );
+    if (gmailPubsubTopicName) {
+      await this.setProviderConfig(applicationId, 'gmail_pubsub_topic_name', gmailPubsubTopicName, now);
+    } else if (gmailPubsubTopicName === null) {
+      await this.deleteProviderConfig(applicationId, 'gmail_pubsub_topic_name');
+    }
+    if (enabledFeatures && enabledFeatures.length > 0) {
+      await this.setProviderConfig(applicationId, 'oauth2_enabled_features', JSON.stringify(enabledFeatures), now);
+    } else if (enabledFeatures !== undefined) {
+      await this.deleteProviderConfig(applicationId, 'oauth2_enabled_features');
+    }
+    if (senderDomainFilters != null && senderDomainFilters.includeRules.length > 0) {
+      await this.setProviderConfig(applicationId, 'sender_domain_filters', JSON.stringify(senderDomainFilters), now);
+    } else if (senderDomainFilters !== undefined) {
+      await this.deleteProviderConfig(applicationId, 'sender_domain_filters');
+    }
+    if (timeZone) {
+      await this.setProviderConfig(applicationId, 'calendar_time_zone', TimeZoneUtil.normalize(timeZone), now);
+    } else if (timeZone === null) {
+      await this.deleteProviderConfig(applicationId, 'calendar_time_zone');
+    }
+    if (contentLanguage) {
+      await this.setProviderConfig(applicationId, 'content_language', LocaleUtil.normalize(contentLanguage), now);
+    } else if (contentLanguage === null) {
+      await this.deleteProviderConfig(applicationId, 'content_language');
+    }
+    if (imapConfig) {
+      await this.saveImapConfig(applicationId, imapConfig, now);
+    }
+    if (autoExecuteActionTypes && autoExecuteActionTypes.length > 0) {
+      await this.setProviderConfig(applicationId, 'auto_execute_action_types', JSON.stringify(autoExecuteActionTypes), now);
+    } else if (autoExecuteActionTypes !== undefined) {
+      await this.deleteProviderConfig(applicationId, 'auto_execute_action_types');
+    }
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+
+  public async markImapConnected(applicationId: string, providerEmail: string): Promise<void> {
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    await this.run(
+      `UPDATE connected_applications SET provider_email = ?, status = ?, updated_at = ? WHERE application_id = ? AND connection_method = ?`,
+      [providerEmail, CONNECTED_APPLICATION_STATUS_CONNECTED, now, applicationId, CONNECTION_METHOD_IMAP_PASSWORD],
+    );
+  }
+
+  private async saveImapConfig(
+    applicationId: string,
+    config: { host?: string | null; port?: number | null; username?: string | null; smtpHost?: string | null; smtpPort?: number | null },
+    now: number,
+  ): Promise<void> {
+    await this.flags().saveImapConfig(applicationId, config, now);
+  }
+
+  public async markOAuth2Connected(applicationId: string, refreshToken: string, providerEmail: string): Promise<void> {
+    const application: ConnectedApplication | undefined = await this.getById(applicationId);
+    if (!application || application.connectionMethod !== CONNECTION_METHOD_OAUTH2) {
+      throw new DatabaseError('OAuth2 application was not found.');
+    }
+
+    const credentials: OAuth2Credentials = {
+      ...(application.credentials as OAuth2Credentials),
+      refreshToken,
+    };
+    const encrypted = await encryptData(JSON.stringify(credentials), this.masterKey);
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    await this.run(
+      ` UPDATE connected_applications SET encrypted_credentials = ?, credentials_iv = ?, provider_email = ?, status = ?, updated_at = ? WHERE application_id = ? `,
+      [encrypted.encrypted, encrypted.iv, providerEmail, CONNECTED_APPLICATION_STATUS_CONNECTED, now, applicationId],
+    );
+  }
+
+  public async updateOAuth2RefreshToken(applicationId: string, refreshToken: string): Promise<void> {
+    const application: ConnectedApplication | undefined = await this.getById(applicationId);
+    if (!application || application.connectionMethod !== CONNECTION_METHOD_OAUTH2) return;
+    const credentials: OAuth2Credentials = {
+      ...(application.credentials as OAuth2Credentials),
+      refreshToken,
+    };
+    const encrypted = await encryptData(JSON.stringify(credentials), this.masterKey);
+    await this.run('UPDATE connected_applications SET encrypted_credentials = ?, credentials_iv = ? WHERE application_id = ?', [
+      encrypted.encrypted,
+      encrypted.iv,
+      applicationId,
+    ]);
+  }
+
+  public async markError(applicationId: string, _message: string): Promise<void> {
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    await this.run('UPDATE connected_applications SET status = ?, updated_at = ? WHERE application_id = ?', [
+      CONNECTED_APPLICATION_STATUS_ERROR,
+      now,
+      applicationId,
+    ]);
+  }
+
+  public async updateContextIndexingForUser(
+    applicationId: string,
+    scope: UserScope,
+    contextIndexingEnabled: boolean,
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    const where: UserScopeSql = userScopeSql(scope);
+    await this.run(
+      ` UPDATE connected_applications SET context_indexing_enabled = ?, updated_at = ? WHERE application_id = ? AND ${where.clause} `,
+      [contextIndexingEnabled ? 1 : 0, now, applicationId, ...where.bindings],
+    );
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+
+  public async updateRagRetrievalForUser(
+    applicationId: string,
+    scope: UserScope,
+    ragRetrievalEnabled: boolean,
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    const where: UserScopeSql = userScopeSql(scope);
+    await this.run(
+      ` UPDATE connected_applications SET rag_retrieval_enabled = ?, updated_at = ? WHERE application_id = ? AND ${where.clause} `,
+      [ragRetrievalEnabled ? 1 : 0, now, applicationId, ...where.bindings],
+    );
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+
+  public async updateWatchedFolderIdsForUser(
+    applicationId: string,
+    scope: UserScope,
+    folderIds: string[] | null,
+    folderNames?: Record<string, string>,
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    // Verify ownership before touching the child watched-folders table so
+    // unknown/foreign applications return undefined (→ 404) instead of
+    // failing on the foreign-key constraint (→ 500).
+    const existing = await this.getMetadataByIdForUser(applicationId, scope);
+    if (!existing) return undefined;
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    await this.flags().replaceWatchedFolders(applicationId, folderIds, folderNames, now);
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+
+  public async updateMaxContextDocumentsForUser(
+    applicationId: string,
+    scope: UserScope,
+    maxContextDocuments: number | null,
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    const now: number = TimestampUtil.getCurrentUnixTimestampInSeconds();
+    const where: UserScopeSql = userScopeSql(scope);
+    await this.run(
+      ` UPDATE connected_applications SET max_context_documents = ?, updated_at = ? WHERE application_id = ? AND ${where.clause} `,
+      [maxContextDocuments, now, applicationId, ...where.bindings],
+    );
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+
+  public async listApplicationIdsWithFeatureEnabled(featureName: string): Promise<string[]> {
+    return this.flags().listApplicationIdsWithFeatureEnabled(featureName);
+  }
+
+  public async listApplicationIdsWithProviderConfig(configKey: string, configValue: string): Promise<string[]> {
+    return this.flags().listApplicationIdsWithProviderConfig(configKey, configValue);
+  }
+
+  public async deleteForUser(applicationId: string, scope: UserScope): Promise<void> {
+    const where: UserScopeSql = userScopeSql(scope);
+    await this.run(`DELETE FROM connected_applications WHERE application_id = ? AND ${where.clause}`, [applicationId, ...where.bindings]);
+  }
+
+  public async getProviderConfig(applicationId: string, configKey: string): Promise<string | null> {
+    return this.flags().getProviderConfig(applicationId, configKey);
+  }
+
+  public async setProviderConfig(applicationId: string, configKey: string, configValue: string, now?: number): Promise<void> {
+    await this.flags().setProviderConfig(applicationId, configKey, configValue, now);
+  }
+
+  public async deleteProviderConfig(applicationId: string, configKey: string): Promise<void> {
+    await this.flags().deleteProviderConfig(applicationId, configKey);
+  }
+
+  public async getWatchedFolders(applicationId: string): Promise<Array<{ folderPath: string; folderName: string }>> {
+    return this.flags().getWatchedFolders(applicationId);
+  }
+
+  /**
+   * The single ownership predicate for this table.
+   *
+   * Omitting `scope` is how `getById` performs an unscoped read (background
+   * workers and the OAuth2 callback, which resolve an application by id without
+   * an authenticated owner). Supplying it applies the id-first predicate, so a
+   * user who has changed address still matches their own mailboxes.
+   */
+  private async getRowById(applicationId: string, scope?: UserScope): Promise<ConnectedApplicationInternal | undefined> {
+    const where: UserScopeSql | null = scope ? userScopeSql(scope) : null;
+    const bindings: string[] = where ? [applicationId, ...where.bindings] : [applicationId];
+    const row: ConnectedApplicationInternal | null = await this.first<ConnectedApplicationInternal>(
+      ` SELECT application_id, user_email, provider_email, display_name, provider_id, connection_method, encrypted_credentials, credentials_iv, status, context_indexing_enabled, rag_retrieval_enabled, max_context_documents, last_error_acknowledged_at, context_last_error_acknowledged_at, created_at, updated_at FROM connected_applications WHERE application_id = ?${where ? ` AND ${where.clause}` : ''} LIMIT 1 `,
+      [...bindings],
+    );
+    return row ?? undefined;
+  }
+
+  private async toApplication(row: ConnectedApplicationInternal): Promise<ConnectedApplication> {
+    const decryptedCredentials: string = await decryptData(row.encrypted_credentials, row.credentials_iv, this.masterKey);
+    const credentials: ConnectedApplicationCredentials = JSON.parse(decryptedCredentials) as ConnectedApplicationCredentials;
+    const metadata = await this.toMetadata(row);
+    const imapPassword: string | null =
+      row.connection_method === CONNECTION_METHOD_IMAP_PASSWORD ? ((credentials as { imapPassword?: string }).imapPassword ?? null) : null;
+    return {
+      ...metadata,
+      ...(imapPassword != null && { imapPassword }),
+      credentials,
+    };
+  }
+
+  private async toMetadata(row: ConnectedApplicationInternal): Promise<ConnectedApplicationMetadata> {
+    const watchedFoldersPromise = this.getWatchedFolders(row.application_id);
+    const configValues = await Promise.all(METADATA_CONFIG_KEYS.map((key) => this.getProviderConfig(row.application_id, key)));
+    const config = Object.fromEntries(METADATA_CONFIG_KEYS.map((key, index) => [key, configValues[index]])) as MetadataConfigMap;
+    const watchedFolders = await watchedFoldersPromise;
+    const writer: MetadataConfigWriter = {
+      setConfig: (applicationId, key, value) => this.setProviderConfig(applicationId, key, value).then(() => {}),
+      deleteConfig: (applicationId, key) => this.deleteProviderConfig(applicationId, key).then(() => {}),
+    };
+    const filters = await migrateLegacyExcludeRules(
+      row.application_id,
+      config.sender_domain_filters,
+      config.email_processing_rules,
+      writer,
+    );
+    return assembleMetadata(row, config, watchedFolders, filters);
+  }
+
+  public async updateAttachmentVisionEnabledForUser(
+    applicationId: string,
+    scope: UserScope,
+    enabled: boolean,
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    await this.setProviderConfig(applicationId, 'attachment_vision_enabled', enabled ? 'true' : 'false');
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+
+  public async updateContentLanguageForUser(
+    applicationId: string,
+    scope: UserScope,
+    contentLanguage: string | null,
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    if (contentLanguage) {
+      await this.setProviderConfig(applicationId, 'content_language', LocaleUtil.normalize(contentLanguage));
+    } else {
+      await this.deleteProviderConfig(applicationId, 'content_language');
+    }
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+
+  public async updateEmailProcessingRulesForUser(
+    applicationId: string,
+    scope: UserScope,
+    rules: EmailProcessingRule[],
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    if (rules.length > 0) {
+      await this.setProviderConfig(applicationId, 'email_processing_rules', JSON.stringify(rules));
+    } else {
+      await this.deleteProviderConfig(applicationId, 'email_processing_rules');
+    }
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+
+  public async acknowledgeErrorForUser(
+    applicationId: string,
+    scope: UserScope,
+    errorType: 'processing' | 'context',
+  ): Promise<ConnectedApplicationMetadata | undefined> {
+    // The flag write and the ownership read use the same predicate, so a
+    // non-owner cannot clear the flag either.
+    await this.flags().acknowledgeError(applicationId, scope, errorType);
+    return this.getMetadataByIdForUser(applicationId, scope);
+  }
+}
+
+export { ConnectedApplicationDAO };

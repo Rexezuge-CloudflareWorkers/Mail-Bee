@@ -1,0 +1,28 @@
+{
+  "name": "@mail-bee/api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mail-bee/backend-data": "workspace:*",
+    "@mail-bee/backend-runtime": "workspace:*",
+    "@mail-bee/backend-services": "workspace:*",
+    "@mail-bee/background": "workspace:*",
+    "@mail-bee/shared": "workspace:*",
+    "@rexezuge/d1": "1.9.4",
+    "@rexezuge/errors": "1.9.4",
+    "@rexezuge/http": "1.9.4",
+    "@rexezuge/identity": "1.9.4",
+    "@rexezuge/runtime": "1.9.4",
+    "@rexezuge/shared": "1.9.4",
+    "chanfana": "3.7.0",
+    "hono": "4.13.20"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "6.0.3"
+  }
+}
