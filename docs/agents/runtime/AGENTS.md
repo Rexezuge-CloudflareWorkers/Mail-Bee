@@ -1,6 +1,6 @@
 # Bindings and runtime configuration
 
-`apps/api/wrangler.template.jsonc` is the source of truth. Copy it to `wrangler.jsonc` per deployment; no committed `wrangler.jsonc`. After changing bindings run `pnpm run typegen`.
+`apps/api/wrangler.template.jsonc` is the source of truth. Deployments materialize a root `wrangler.jsonc` from it (or from the `WRANGLER_JSONC` variable) via `scripts/deploy/prepare-wrangler-config.ts`; no committed `wrangler.jsonc`. The script rewrites the template's `main`, asset directory and `migrations_dir` to root-relative paths and provisions placeholder D1/KV/Secrets Store IDs. After changing bindings run `pnpm run typegen`.
 
 | Binding                                      | Purpose                                                               |
 | -------------------------------------------- | --------------------------------------------------------------------- |

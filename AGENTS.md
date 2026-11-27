@@ -11,7 +11,7 @@ pnpm run build
 pnpm exec wrangler dev --config ./apps/api/wrangler.template.jsonc
 ```
 
-Plain `pnpm` is canonical. `pnpm run checks` runs typecheck, lint, format, migration lock and both test suites. All must pass before committing.
+Plain `pnpm` is canonical. `pnpm run checks` runs typecheck (workspaces, scripts, Pages functions), lint, format, migration lock, SPA shell verification and both test suites. Run `pnpm run build` first — a fresh clone has only an empty SPA-shell stub. All checks must pass before committing.
 
 ## Import direction
 

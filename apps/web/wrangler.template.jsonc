@@ -2,7 +2,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mail-bee-web",
   "compatibility_date": "2025-12-31",
-  "pages_build_output_dir": "./dist/",
+  // Root-relative: the deploy job copies this template to the repository-root
+  // wrangler.jsonc before calling `wrangler pages deploy`.
+  "pages_build_output_dir": "apps/web/dist/",
   "services": [
     {
       "binding": "API_WORKER",
