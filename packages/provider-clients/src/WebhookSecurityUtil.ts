@@ -13,7 +13,22 @@ class WebhookSecurityUtil {
   public static async matchesSecret(secret: string | undefined | null, expectedHash: string | undefined | null): Promise<boolean> {
     if (!secret || !expectedHash) return false;
     const actualHash: string = await this.hashSecret(secret);
-    return actualHash === expectedHash;
+    return this.constantTimeEqual(actualHash, expectedHash);
+  }
+
+  /**
+   * A plain `===` leaks the length of the common prefix through its early exit.
+   * The hashes are random-looking hex, so compare every byte instead: the cost
+   * depends on the public hash length, not on how much of the secret matched.
+   */
+  private static constantTimeEqual(actual: string, expected: string): boolean {
+    const actualBytes: Uint8Array = new TextEncoder().encode(actual);
+    const expectedBytes: Uint8Array = new TextEncoder().encode(expected);
+    let difference: number = actualBytes.length ^ expectedBytes.length;
+    for (const [index, byte] of actualBytes.entries()) {
+      difference |= byte ^ (expectedBytes[index] ?? 0);
+    }
+    return difference === 0;
   }
 
   public static base64UrlDecodeToString(value: string): string {

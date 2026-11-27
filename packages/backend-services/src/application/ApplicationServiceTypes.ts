@@ -1,26 +1,14 @@
-import type {
-  AiDailyUsageDAO,
-  ApplicationContextDAO,
-  ApplicationIntegrationDAO,
-  ConnectedApplicationDAO,
-  IntegrationDeliveryLogDAO,
-  OAuth2AccessTokenCacheDAO,
-} from '@mail-bee/backend-data/dao';
+import type { ApplicationContextDAO, ConnectedApplicationDAO, OAuth2AccessTokenCacheDAO } from '@mail-bee/backend-data/dao';
 import type { D1Queryable } from '@mail-bee/backend-data/utils';
-import type { OutboundIntegrationType, SenderDomainFilters } from '@mail-bee/shared/model';
-import type { IntegrationService } from '../integration/IntegrationService';
+import type { SenderDomainFilters } from '@mail-bee/shared/model';
 import type { OAuth2AccessTokenService } from '../oauth2/OAuth2AccessTokenService';
 import type { WatchService } from '../subscription/WatchService';
 
 interface ApplicationServiceDeps {
   applicationDAO?: () => Promise<ConnectedApplicationDAO>;
   contextDAO?: () => Promise<ApplicationContextDAO>;
-  integrationDAO?: () => Promise<ApplicationIntegrationDAO>;
-  deliveryLogDAO?: () => Promise<IntegrationDeliveryLogDAO>;
-  usageDAO?: () => Promise<AiDailyUsageDAO>;
   tokenCacheDAO?: () => Promise<OAuth2AccessTokenCacheDAO>;
   watchService?: () => Promise<WatchService>;
-  integrationService?: () => Promise<IntegrationService>;
   tokenService?: () => Promise<OAuth2AccessTokenService>;
 }
 
@@ -30,11 +18,9 @@ interface ApplicationServiceEnv {
   OAUTH2_TOKEN_CACHE?: KVNamespace;
   OAUTH2_TOKEN_REFRESHERS?: DurableObjectNamespace;
   EMAIL_CONTEXT_INDEX?: Vectorize;
-  AI?: Ai;
   MAX_APPLICATIONS_PER_USER?: string;
   OAUTH2_ACCESS_TOKEN_MIN_VALID_SECONDS?: string;
   OUTLOOK_SUBSCRIPTION_TTL_DAYS?: string;
-  AI_SUMMARY_MODEL?: string;
 }
 
 interface CreateUserApplicationInput {
@@ -68,26 +54,10 @@ interface UpdateWatchedFolderIdsInput {
   folderNames?: Record<string, string>;
 }
 
-interface CreateIntegrationInput {
-  applicationId: string;
-  integrationType: OutboundIntegrationType;
-  name: string;
-  webhookUrl: string;
-}
-
-interface UpdateIntegrationInput {
-  integrationId: string;
-  name?: string;
-  enabled?: boolean;
-  webhookUrl?: string;
-}
-
 export type {
   ApplicationServiceDeps,
   ApplicationServiceEnv,
-  CreateIntegrationInput,
   CreateUserApplicationInput,
-  UpdateIntegrationInput,
   UpdateUserApplicationInput,
   UpdateWatchedFolderIdsInput,
 };

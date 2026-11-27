@@ -1,6 +1,6 @@
 # packages/backend-services
 
-Business logic. Keep the composition root (`composition/tokens.ts`, `composition/requestScope.ts`) in sync when adding a service: declare its env interface, add a token, bind a factory, and extend `RequestScopeEnv` so a missing binding fails typecheck.
+Business logic. Keep the composition root (`composition/tokens.ts`, `composition/requestScope.ts`) in sync when adding a service: declare its env interface, add a token, bind a factory, and extend `RequestScopeEnv` so a missing binding fails typecheck. Only tokens a route, workflow or registered cron task actually resolves belong there — the Mail-Otter AI/action/digest/integration/chat services were removed rather than left bound but unused; do not reintroduce them.
 
 Product areas:
 

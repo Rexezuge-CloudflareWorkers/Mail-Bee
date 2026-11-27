@@ -16,7 +16,6 @@ import type {
 } from '@mail-bee/shared/model';
 import { ConfigurationManager } from '@mail-bee/backend-runtime/config';
 import type { UserScope } from '@mail-bee/backend-data/dao';
-import { EmailContextUtil } from '../email/EmailContextUtil';
 import { WatchService } from '../subscription/WatchService';
 import { ApplicationResponseUtil } from './ApplicationResponseUtil';
 import type { ApplicationResponse } from './ApplicationResponseUtil';
@@ -164,8 +163,8 @@ class ApplicationCrudService {
     const contextDAO: ApplicationContextDAO = await this.deps.contextDAO();
     const vectorIds: string[] = await contextDAO.listActiveVectorIdsForApplication(applicationId, scope);
     if (this.env.EMAIL_CONTEXT_INDEX) {
-      for (const chunk of EmailContextUtil.chunk(vectorIds, 1000)) {
-        if (chunk.length > 0) await this.env.EMAIL_CONTEXT_INDEX.deleteByIds(chunk);
+      for (let index = 0; index < vectorIds.length; index += 1000) {
+        await this.env.EMAIL_CONTEXT_INDEX.deleteByIds(vectorIds.slice(index, index + 1000));
       }
       await contextDAO.markDocumentsDeletedByVectorIds(applicationId, scope, vectorIds);
     }

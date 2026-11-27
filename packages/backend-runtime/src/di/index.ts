@@ -8,10 +8,3 @@
  */
 export { Container } from '@rexezuge/runtime';
 export type { Factory, Token } from '@rexezuge/runtime';
-
-// Product-local. The kit's `RequestScope` is the opposite idea — it stores a
-// `Container` on the request context so handlers call `scope.get(Tokens.X)`,
-// where this is the `{ env, logger, clock }` bundle a service receives through
-// its constructor. Both exist; neither replaces the other.
-export { createServiceContext } from './ServiceContext';
-export type { ServiceContext, ServiceContextOverrides } from './ServiceContext';

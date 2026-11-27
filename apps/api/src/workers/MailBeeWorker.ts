@@ -5,7 +5,7 @@ import { allRoutes } from '@/endpoints/routeTable';
 import { SPA_HTML } from '@/generated/spa-shell';
 import { MiddlewareHandlers, PUBLIC_CALLBACK_LIMIT, securityHeadersMiddleware, USER_API_LIMIT } from '@/middleware';
 import { DURABLE_OBJECT_CRON_TASKS_RUN_URL, DURABLE_OBJECT_NAMESPACE_GLOBAL } from '@mail-bee/backend-runtime/constants';
-import { createD1SessionEnv } from '@mail-bee/backend-data/utils';
+import { createD1SessionEnv } from '@mail-bee/backend-services/composition';
 import { logError } from '@mail-bee/shared/utils';
 
 const D1_BOOKMARK_HEADER = 'x-d1-bookmark';

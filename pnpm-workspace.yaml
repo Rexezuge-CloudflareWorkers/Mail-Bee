@@ -9,12 +9,12 @@ allowBuilds:
 minimumReleaseAge: 0
 
 overrides:
-  '@rexezuge/d1': '1.7.2'
-  '@rexezuge/errors': '1.7.2'
-  '@rexezuge/http': '1.7.2'
-  '@rexezuge/i18n': '1.7.2'
-  '@rexezuge/identity': '1.7.2'
-  '@rexezuge/runtime': '1.7.2'
-  '@rexezuge/shared': '1.7.2'
-  '@rexezuge/tooling': '1.7.2'
-  '@rexezuge/web': '1.7.2'
+  '@rexezuge/d1': '1.9.4'
+  '@rexezuge/errors': '1.9.4'
+  '@rexezuge/http': '1.9.4'
+  '@rexezuge/i18n': '1.9.4'
+  '@rexezuge/identity': '1.9.4'
+  '@rexezuge/runtime': '1.9.4'
+  '@rexezuge/shared': '1.9.4'
+  '@rexezuge/tooling': '1.9.4'
+  '@rexezuge/web': '1.9.4'

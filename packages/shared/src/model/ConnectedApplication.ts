@@ -1,5 +1,4 @@
 import type { ConnectedApplicationStatus as ConnectedAppStatus, ConnectionMethod, ProviderId } from '../constants';
-import type { DigestConfig } from './DigestConfig';
 import type { EmailProcessingRule } from './EmailRule';
 
 interface SenderDomainFilters {
@@ -36,7 +35,6 @@ interface ConnectedAppMetadata {
   senderDomainFilters?: SenderDomainFilters | null;
   emailProcessingRules?: EmailProcessingRule[] | null;
   autoExecuteActionTypes?: string[] | null;
-  digestConfig?: DigestConfig | null;
   gmailPubsubTopicName?: string | null;
   imapHost?: string | null;
   imapPort?: number | null;

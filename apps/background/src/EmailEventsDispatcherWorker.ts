@@ -58,9 +58,14 @@ class EmailEventsDispatcherWorker extends AbstractQueueWorker<MessageBatch<Email
     return `emw_${hash.slice(0, 60)}`;
   }
 
+  /**
+   * Only an existing *workflow instance* is safe to ack: a bare "exists" also
+   * matches "queue does not exist" and "database does not exist", and acking
+   * those would silently drop the notification.
+   */
   private static isDuplicateWorkflowError(error: unknown): boolean {
     const message: string = error instanceof Error ? error.message : String(error);
-    return /already exists|duplicate|exists/i.test(message);
+    return /\b(?:workflow|instance)\b[^\n]+\balready exists\b/i.test(message);
   }
 }
 

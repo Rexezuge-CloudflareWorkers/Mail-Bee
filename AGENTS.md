@@ -37,7 +37,7 @@ Per-request DI: `createRequestScope(env)` and `scope.get(Tokens.X)` from `@mail-
 
 ## The kit
 
-`@rexezuge/*` (pinned to one copy via `pnpm-workspace.yaml` overrides) provides the error taxonomy, D1 base DAO, Access auth, security headers, worker bases, DI container, identity helpers and the Vite SPA shell plugin. `@rexezuge/*` must stay inside Vite's pipeline (`noExternal`) because the worker bases extend classes from `cloudflare:workers`.
+`@rexezuge/*` (pinned to one version via `pnpm-workspace.yaml` overrides — keep the override equal to the version declared in every manifest) provides the error taxonomy, D1 base DAO, Access auth, security headers, worker bases, DI container, scheduled-task Template Method, identity helpers and the Vite SPA shell plugin. `@rexezuge/*` must stay inside Vite's pipeline (`noExternal`) because the worker bases extend classes from `cloudflare:workers`. Cron tasks extend the kit's `AbstractScheduledTask` through `apps/background/src/scheduled/MailBeeScheduledTask.ts`, which supplies this repo's DAO, redaction and error-policy seams; do not reintroduce a local copy of the Template Method.
 
 ## Product rules
 

@@ -2,7 +2,7 @@
 
 Mail-Bee monitors a mailbox you own and forwards every new message, unchanged, to the email address you sign in with. It runs entirely on Cloudflare Workers: OAuth connections and webhook subscriptions live in a single Worker, a queue and Workflow do the forwarding, and delivery uses Cloudflare's [Email Sending binding](https://developers.cloudflare.com/email-service/api/send-emails/workers-api/).
 
-The repo is a trimmed descendant of Mail-Otter: it keeps that project's kit-based layering, identity, OAuth, webhook and background-worker framework as its foundation. The product surface uses only the identity, application, OAuth, subscription, webhook and forwarding paths — AI summaries, actions, RAG, digest, integrations and IMAP providers are not wired into any route or workflow.
+The repo is a trimmed descendant of Mail-Otter: it keeps that project's kit-based layering, identity, OAuth, webhook and background-worker framework as its foundation. The product surface uses only the identity, application, OAuth, subscription, webhook and forwarding paths — the AI summary, action, RAG, digest, integration and chat services have been removed rather than left unwired.
 
 ## How it works
 
