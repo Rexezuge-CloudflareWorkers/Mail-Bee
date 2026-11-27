@@ -1,179 +1,121 @@
-import {
-  DEFAULT_ACTION_CALLBACK_BASE_URL,
-  DEFAULT_ACTION_DEFAULT_EXPIRY_HOURS,
-  DEFAULT_ACTION_RETENTION_DAYS,
-  DEFAULT_AI_DAILY_NEURON_FALLBACK_THRESHOLD,
-  DEFAULT_AI_DAILY_NEURON_FREE_TIER_LIMIT,
-  DEFAULT_AI_DAILY_USAGE_RETENTION_DAYS,
-  DEFAULT_AI_EMBEDDING_MODEL,
-  DEFAULT_CONTEXT_AUDIT_LOG_RETENTION_DAYS,
-  DEFAULT_INTEGRATION_DELIVERY_LOG_RETENTION_DAYS,
-  DEFAULT_PACKAGE_TRACKING_API_KEY,
-  DEFAULT_FLIGHT_TRACKING_API_KEY,
-  DEFAULT_BACKGROUND_TASK_RUN_RETENTION_DAYS,
-  DEFAULT_CONTEXT_DELETION_RUN_RETENTION_DAYS,
-  DEFAULT_DEBUG_MODE,
-  DEFAULT_EMAIL_SUMMARY_FALLBACK_MODEL,
-  DEFAULT_EMAIL_SUMMARY_MODEL,
-  DEFAULT_GMAIL_WATCH_RENEWAL_WINDOW_HOURS,
-  DEFAULT_MAX_APPLICATIONS_PER_USER,
-  DEFAULT_MAX_CONTEXT_DOCUMENTS_PER_APPLICATION,
-  DEFAULT_MAX_CONTEXT_MEMORY_CHARS,
-  DEFAULT_MAX_EMAIL_BODY_CHARS,
-  DEFAULT_MAX_RAG_CONTEXT_CHARS,
-  DEFAULT_OAUTH2_STATE_EXPIRY_MINUTES,
-  DEFAULT_OAUTH2_ACCESS_TOKEN_FALLBACK_TTL_SECONDS,
-  DEFAULT_OAUTH2_ACCESS_TOKEN_MIN_VALID_SECONDS,
-  DEFAULT_OAUTH2_ACCESS_TOKEN_REFRESH_WINDOW_SECONDS,
-  DEFAULT_OAUTH2_TOKEN_REFRESH_BATCH_SIZE,
-  DEFAULT_OUTLOOK_SUBSCRIPTION_RENEWAL_WINDOW_HOURS,
-  DEFAULT_OUTLOOK_SUBSCRIPTION_TTL_DAYS,
-  DEFAULT_PROCESSED_MESSAGE_RETENTION_DAYS,
-  DEFAULT_RAG_TOP_K,
-  DEFAULT_RAG_VECTOR_QUERY_TOP_K,
-  DEFAULT_RENEWAL_RETRY_BASE_DELAY_SECONDS,
-  DEFAULT_RENEWAL_RETRY_MAX_DELAY_SECONDS,
-  DEFAULT_STALE_CONTEXT_DOCUMENT_DELETED_GRACE_DAYS,
-  DEFAULT_STALE_CONTEXT_DOCUMENT_ERROR_GRACE_DAYS,
-  DEFAULT_ATTACHMENT_VISION_ENABLED,
-  DEFAULT_ATTACHMENT_VISION_MODEL,
-  DEFAULT_MAX_ATTACHMENT_SIZE_BYTES,
-  DEFAULT_MAX_ATTACHMENTS_PER_EMAIL,
-  DEFAULT_MAX_DRIVE_FILES_PER_SYNC,
-  DEFAULT_CHAT_MAX_RESPONSE_TOKENS,
-  DEFAULT_CHAT_VECTOR_QUERY_TOP_K,
-  DEFAULT_CHAT_CONTEXT_TOP_K,
-  DEFAULT_CHAT_MAX_HISTORY_MESSAGES,
-  DEFAULT_PUBLIC_BASE_URL,
-} from './ConfigurationDefaults';
-import { EnvParser } from '@rexezuge/runtime';
+import { AppConfiguration } from './AppConfiguration';
 
+/**
+ * One instance config per env object. The facade's static call sites predate
+ * dependency injection; memoizing keeps them cheap while making
+ * {@link AppConfiguration} the only place that knows a binding name or a
+ * default value.
+ */
+const instances = new WeakMap<object, AppConfiguration>();
+
+function config(env: unknown): AppConfiguration {
+  if (typeof env !== 'object' || env === null) return new AppConfiguration(env);
+  let instance: AppConfiguration | undefined = instances.get(env);
+  if (!instance) {
+    instance = new AppConfiguration(env);
+    instances.set(env, instance);
+  }
+  return instance;
+}
+
+/**
+ * Static compatibility facade over the SDK-backed {@link AppConfiguration}.
+ *
+ * Env parsing used to live here as well as in the instance config, so a new
+ * binding could be added to one and silently missing from the other. Every
+ * getter below now delegates to the same instance surface; new services should
+ * inject `AppConfiguration` directly instead of calling these statics.
+ */
 class ConfigurationManager {
   // ─── Namespace groups ────────────────────────────────────────────────────────
 
   public static readonly ai = {
-    getSummaryModel: (env: unknown): string => EnvParser.string(env, 'AI_SUMMARY_MODEL', DEFAULT_EMAIL_SUMMARY_MODEL),
-    getSummaryFallbackModel: (env: unknown): string =>
-      EnvParser.string(env, 'AI_SUMMARY_FALLBACK_MODEL', DEFAULT_EMAIL_SUMMARY_FALLBACK_MODEL),
-    getEmbeddingModel: (env: unknown): string => EnvParser.string(env, 'AI_EMBEDDING_MODEL', DEFAULT_AI_EMBEDDING_MODEL),
-    getDailyNeuronFallbackThreshold: (env: unknown): number =>
-      EnvParser.nonNegativeInt(env, 'AI_DAILY_NEURON_FALLBACK_THRESHOLD', DEFAULT_AI_DAILY_NEURON_FALLBACK_THRESHOLD),
-    getDailyNeuronFreeTierLimit: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'AI_DAILY_NEURON_FREE_TIER_LIMIT', DEFAULT_AI_DAILY_NEURON_FREE_TIER_LIMIT),
-    getDailyUsageRetentionDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'AI_DAILY_USAGE_RETENTION_DAYS', DEFAULT_AI_DAILY_USAGE_RETENTION_DAYS),
-    isAttachmentVisionEnabled: (env: unknown): boolean =>
-      EnvParser.boolean(env, 'ATTACHMENT_VISION_ENABLED', DEFAULT_ATTACHMENT_VISION_ENABLED),
-    getAttachmentVisionModel: (env: unknown): string => EnvParser.string(env, 'ATTACHMENT_VISION_MODEL', DEFAULT_ATTACHMENT_VISION_MODEL),
+    getSummaryModel: (env: unknown): string => config(env).getSummaryModel(),
+    getSummaryFallbackModel: (env: unknown): string => config(env).getSummaryFallbackModel(),
+    getEmbeddingModel: (env: unknown): string => config(env).getEmbeddingModel(),
+    getDailyNeuronFallbackThreshold: (env: unknown): number => config(env).getAiDailyNeuronFallbackThreshold(),
+    getDailyNeuronFreeTierLimit: (env: unknown): number => config(env).getAiDailyNeuronFreeTierLimit(),
+    getDailyUsageRetentionDays: (env: unknown): number => config(env).getAiDailyUsageRetentionDays(),
+    isAttachmentVisionEnabled: (env: unknown): boolean => config(env).isAttachmentVisionEnabled(),
+    getAttachmentVisionModel: (env: unknown): string => config(env).getAttachmentVisionModel(),
   };
 
   public static readonly attachment = {
-    getMaxSizeBytes: (env: unknown): number => EnvParser.positiveInt(env, 'MAX_ATTACHMENT_SIZE_BYTES', DEFAULT_MAX_ATTACHMENT_SIZE_BYTES),
-    getMaxPerEmail: (env: unknown): number => EnvParser.positiveInt(env, 'MAX_ATTACHMENTS_PER_EMAIL', DEFAULT_MAX_ATTACHMENTS_PER_EMAIL),
+    getMaxSizeBytes: (env: unknown): number => config(env).getMaxAttachmentSizeBytes(),
+    getMaxPerEmail: (env: unknown): number => config(env).getMaxAttachmentsPerEmail(),
   };
 
   public static readonly oauth2 = {
-    getStateExpiryMinutes: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'OAUTH2_STATE_EXPIRY_MINUTES', DEFAULT_OAUTH2_STATE_EXPIRY_MINUTES),
-    getAccessTokenRefreshWindowSeconds: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'OAUTH2_ACCESS_TOKEN_REFRESH_WINDOW_SECONDS', DEFAULT_OAUTH2_ACCESS_TOKEN_REFRESH_WINDOW_SECONDS),
-    getAccessTokenMinValidSeconds: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'OAUTH2_ACCESS_TOKEN_MIN_VALID_SECONDS', DEFAULT_OAUTH2_ACCESS_TOKEN_MIN_VALID_SECONDS),
-    getAccessTokenFallbackTtlSeconds: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'OAUTH2_ACCESS_TOKEN_FALLBACK_TTL_SECONDS', DEFAULT_OAUTH2_ACCESS_TOKEN_FALLBACK_TTL_SECONDS),
-    getTokenRefreshBatchSize: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'OAUTH2_TOKEN_REFRESH_BATCH_SIZE', DEFAULT_OAUTH2_TOKEN_REFRESH_BATCH_SIZE),
+    getStateExpiryMinutes: (env: unknown): number => config(env).getOauth2StateExpiryMinutes(),
+    getAccessTokenRefreshWindowSeconds: (env: unknown): number => config(env).getAccessTokenRefreshWindowSeconds(),
+    getAccessTokenMinValidSeconds: (env: unknown): number => config(env).getAccessTokenMinValidSeconds(),
+    getAccessTokenFallbackTtlSeconds: (env: unknown): number => config(env).getAccessTokenFallbackTtlSeconds(),
+    getTokenRefreshBatchSize: (env: unknown): number => config(env).getTokenRefreshBatchSize(),
   };
 
   public static readonly context = {
-    getMaxEmailBodyChars: (env: unknown): number => EnvParser.positiveInt(env, 'MAX_EMAIL_BODY_CHARS', DEFAULT_MAX_EMAIL_BODY_CHARS),
-    getMaxContextMemoryChars: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'MAX_CONTEXT_MEMORY_CHARS', DEFAULT_MAX_CONTEXT_MEMORY_CHARS),
-    getMaxRagContextChars: (env: unknown): number => EnvParser.positiveInt(env, 'MAX_RAG_CONTEXT_CHARS', DEFAULT_MAX_RAG_CONTEXT_CHARS),
-    getRagTopK: (env: unknown): number => EnvParser.positiveInt(env, 'RAG_TOP_K', DEFAULT_RAG_TOP_K),
-    getRagVectorQueryTopK: (env: unknown): number => EnvParser.positiveInt(env, 'RAG_VECTOR_QUERY_TOP_K', DEFAULT_RAG_VECTOR_QUERY_TOP_K),
-    getMaxDocumentsPerApplication: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'MAX_CONTEXT_DOCUMENTS_PER_APPLICATION', DEFAULT_MAX_CONTEXT_DOCUMENTS_PER_APPLICATION),
-    getDeletionRunRetentionDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'CONTEXT_DELETION_RUN_RETENTION_DAYS', DEFAULT_CONTEXT_DELETION_RUN_RETENTION_DAYS),
-    getAuditLogRetentionDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'CONTEXT_AUDIT_LOG_RETENTION_DAYS', DEFAULT_CONTEXT_AUDIT_LOG_RETENTION_DAYS),
-    getStaleDocumentDeletedGraceDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'STALE_CONTEXT_DOCUMENT_DELETED_GRACE_DAYS', DEFAULT_STALE_CONTEXT_DOCUMENT_DELETED_GRACE_DAYS),
-    getStaleDocumentErrorGraceDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'STALE_CONTEXT_DOCUMENT_ERROR_GRACE_DAYS', DEFAULT_STALE_CONTEXT_DOCUMENT_ERROR_GRACE_DAYS),
+    getMaxEmailBodyChars: (env: unknown): number => config(env).getMaxEmailBodyChars(),
+    getMaxContextMemoryChars: (env: unknown): number => config(env).getMaxContextMemoryChars(),
+    getMaxRagContextChars: (env: unknown): number => config(env).getMaxRagContextChars(),
+    getRagTopK: (env: unknown): number => config(env).getRagTopK(),
+    getRagVectorQueryTopK: (env: unknown): number => config(env).getRagVectorQueryTopK(),
+    getMaxDocumentsPerApplication: (env: unknown): number => config(env).getMaxDocumentsPerApplication(),
+    getDeletionRunRetentionDays: (env: unknown): number => config(env).getContextDeletionRunRetentionDays(),
+    getAuditLogRetentionDays: (env: unknown): number => config(env).getContextAuditLogRetentionDays(),
+    getStaleDocumentDeletedGraceDays: (env: unknown): number => config(env).getStaleDocumentDeletedGraceDays(),
+    getStaleDocumentErrorGraceDays: (env: unknown): number => config(env).getStaleDocumentErrorGraceDays(),
   };
 
   public static readonly subscription = {
-    getGmailRenewalWindowHours: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'GMAIL_WATCH_RENEWAL_WINDOW_HOURS', DEFAULT_GMAIL_WATCH_RENEWAL_WINDOW_HOURS),
-    getOutlookRenewalWindowHours: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'OUTLOOK_SUBSCRIPTION_RENEWAL_WINDOW_HOURS', DEFAULT_OUTLOOK_SUBSCRIPTION_RENEWAL_WINDOW_HOURS),
-    getOutlookTtlDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'OUTLOOK_SUBSCRIPTION_TTL_DAYS', DEFAULT_OUTLOOK_SUBSCRIPTION_TTL_DAYS),
-    getRenewalRetryBaseDelaySeconds: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'RENEWAL_RETRY_BASE_DELAY_SECONDS', DEFAULT_RENEWAL_RETRY_BASE_DELAY_SECONDS),
-    getRenewalRetryMaxDelaySeconds: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'RENEWAL_RETRY_MAX_DELAY_SECONDS', DEFAULT_RENEWAL_RETRY_MAX_DELAY_SECONDS),
+    getGmailRenewalWindowHours: (env: unknown): number => config(env).getGmailWatchRenewalWindowHours(),
+    getOutlookRenewalWindowHours: (env: unknown): number => config(env).getOutlookRenewalWindowHours(),
+    getOutlookTtlDays: (env: unknown): number => config(env).getOutlookTtlDays(),
+    getRenewalRetryBaseDelaySeconds: (env: unknown): number => config(env).getRenewalRetryBaseDelaySeconds(),
+    getRenewalRetryMaxDelaySeconds: (env: unknown): number => config(env).getRenewalRetryMaxDelaySeconds(),
   };
 
   public static readonly baseUrl = {
-    getPublicBaseUrl: (env: unknown): string => {
-      let url = EnvParser.string(env, 'PUBLIC_BASE_URL', DEFAULT_PUBLIC_BASE_URL);
-      while (url.endsWith('/')) url = url.slice(0, -1);
-      return url;
-    },
+    getPublicBaseUrl: (env: unknown): string => config(env).getPublicBaseUrl(),
   };
 
   public static readonly action = {
-    getCallbackBaseUrl: (env: unknown): string => {
-      let url = EnvParser.string(env, 'ACTION_CALLBACK_BASE_URL', DEFAULT_ACTION_CALLBACK_BASE_URL);
-      while (url.endsWith('/')) url = url.slice(0, -1);
-      return url;
-    },
-    getDefaultExpiryHours: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'ACTION_DEFAULT_EXPIRY_HOURS', DEFAULT_ACTION_DEFAULT_EXPIRY_HOURS),
-    getRetentionDays: (env: unknown): number => EnvParser.positiveInt(env, 'ACTION_RETENTION_DAYS', DEFAULT_ACTION_RETENTION_DAYS),
+    getCallbackBaseUrl: (env: unknown): string => config(env).getActionCallbackBaseUrl(),
+    getDefaultExpiryHours: (env: unknown): number => config(env).getActionDefaultExpiryHours(),
+    getRetentionDays: (env: unknown): number => config(env).getActionRetentionDays(),
   };
 
   public static readonly limits = {
-    getMaxApplicationsPerUser: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'MAX_APPLICATIONS_PER_USER', DEFAULT_MAX_APPLICATIONS_PER_USER),
-    getProcessedMessageRetentionDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'PROCESSED_MESSAGE_RETENTION_DAYS', DEFAULT_PROCESSED_MESSAGE_RETENTION_DAYS),
+    getMaxApplicationsPerUser: (env: unknown): number => config(env).getMaxApplicationsPerUser(),
+    getProcessedMessageRetentionDays: (env: unknown): number => config(env).getProcessedMessageRetentionDays(),
   };
 
   public static readonly integrations = {
-    getDeliveryLogRetentionDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'INTEGRATION_DELIVERY_LOG_RETENTION_DAYS', DEFAULT_INTEGRATION_DELIVERY_LOG_RETENTION_DAYS),
+    getDeliveryLogRetentionDays: (env: unknown): number => config(env).getIntegrationDeliveryLogRetentionDays(),
   };
 
   public static readonly digest = {
-    getPackageTrackingApiKey: (env: unknown): string => ConfigurationManager.tracking.getPackageTrackingApiKey(env),
-    getFlightTrackingApiKey: (env: unknown): string => ConfigurationManager.tracking.getFlightTrackingApiKey(env),
+    getPackageTrackingApiKey: (env: unknown): string => config(env).getPackageTrackingApiKey(),
+    getFlightTrackingApiKey: (env: unknown): string => config(env).getFlightTrackingApiKey(),
   };
 
   public static readonly tracking = {
-    getPackageTrackingApiKey: (env: unknown): string => EnvParser.string(env, 'PACKAGE_TRACKING_API_KEY', DEFAULT_PACKAGE_TRACKING_API_KEY),
-    getFlightTrackingApiKey: (env: unknown): string => EnvParser.string(env, 'FLIGHT_TRACKING_API_KEY', DEFAULT_FLIGHT_TRACKING_API_KEY),
+    getPackageTrackingApiKey: (env: unknown): string => config(env).getPackageTrackingApiKey(),
+    getFlightTrackingApiKey: (env: unknown): string => config(env).getFlightTrackingApiKey(),
   };
 
   public static readonly processing = {
-    getTaskRunRetentionDays: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'BACKGROUND_TASK_RUN_RETENTION_DAYS', DEFAULT_BACKGROUND_TASK_RUN_RETENTION_DAYS),
+    getTaskRunRetentionDays: (env: unknown): number => config(env).getTaskRunRetentionDays(),
   };
 
   public static readonly drive = {
-    getMaxFilesPerSync: (env: unknown): number => EnvParser.positiveInt(env, 'MAX_DRIVE_FILES_PER_SYNC', DEFAULT_MAX_DRIVE_FILES_PER_SYNC),
+    getMaxFilesPerSync: (env: unknown): number => config(env).getMaxDriveFilesPerSync(),
   };
 
   public static readonly chat = {
-    getMaxResponseTokens: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'CHAT_MAX_RESPONSE_TOKENS', DEFAULT_CHAT_MAX_RESPONSE_TOKENS),
-    getVectorQueryTopK: (env: unknown): number => EnvParser.positiveInt(env, 'CHAT_VECTOR_QUERY_TOP_K', DEFAULT_CHAT_VECTOR_QUERY_TOP_K),
-    getContextTopK: (env: unknown): number => EnvParser.positiveInt(env, 'CHAT_CONTEXT_TOP_K', DEFAULT_CHAT_CONTEXT_TOP_K),
-    getMaxHistoryMessages: (env: unknown): number =>
-      EnvParser.positiveInt(env, 'CHAT_MAX_HISTORY_MESSAGES', DEFAULT_CHAT_MAX_HISTORY_MESSAGES),
+    getMaxResponseTokens: (env: unknown): number => config(env).getChatMaxResponseTokens(),
+    getVectorQueryTopK: (env: unknown): number => config(env).getChatVectorQueryTopK(),
+    getContextTopK: (env: unknown): number => config(env).getChatContextTopK(),
+    getMaxHistoryMessages: (env: unknown): number => config(env).getChatMaxHistoryMessages(),
   };
 
   // ─── Flat API (backward-compatible, delegates to namespace groups) ────────────
@@ -182,7 +124,7 @@ class ConfigurationManager {
     return this.limits.getMaxApplicationsPerUser(env);
   }
   public static getDebugMode(env: unknown): boolean {
-    return EnvParser.boolean(env, 'DEBUG_MODE', DEFAULT_DEBUG_MODE);
+    return config(env).getDebugMode();
   }
   public static getOauth2StateExpiryMinutes(env: unknown): number {
     return this.oauth2.getStateExpiryMinutes(env);

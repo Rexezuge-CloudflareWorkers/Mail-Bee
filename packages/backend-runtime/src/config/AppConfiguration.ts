@@ -1,4 +1,4 @@
-import { AppConfiguration, EnvParser } from '@rexezuge/runtime';
+import { AppConfiguration as KitAppConfiguration, EnvParser } from '@rexezuge/runtime';
 import {
   DEFAULT_ACTION_CALLBACK_BASE_URL,
   DEFAULT_ACTION_DEFAULT_EXPIRY_HOURS,
@@ -63,10 +63,10 @@ import {
  * a binding only this app has. Getters the kit owns (`getSiteUrl`,
  * `getEnvironment`) and its startup-warning `validate()` are inherited.
  */
-class MailOtterConfig extends AppConfiguration {
+class AppConfiguration extends KitAppConfiguration {
   // Public, and one line, so the kit's polymorphic `fromEnv` — whose `this`
   // parameter is `new (env: unknown) => T` — resolves to this class and returns
-  // a `MailOtterConfig` rather than the abstract base. The base's constructor is
+  // an `AppConfiguration` rather than the abstract base. The base's constructor is
   // protected, so without this the inherited `fromEnv` would not typecheck at
   // either call site.
   public constructor(env: unknown) {
@@ -279,4 +279,4 @@ class MailOtterConfig extends AppConfiguration {
   }
 }
 
-export { MailOtterConfig };
+export { AppConfiguration };
