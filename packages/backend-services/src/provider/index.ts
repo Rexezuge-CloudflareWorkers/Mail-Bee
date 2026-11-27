@@ -10,7 +10,6 @@ export { AbstractOAuthEmailProvider } from './AbstractOAuthEmailProvider';
 export { ImapEmailProviderBase } from './ImapEmailProviderBase';
 export { ConfigurableImapEmailProvider } from './ConfigurableImapEmailProvider';
 export type { ImapProviderConfig } from './ConfigurableImapEmailProvider';
-export { IMAP_PROVIDER_DEFAULTS, buildImapConnectOptions, getImapDefaults } from './ImapConnectionFactory';
 export type {
   AnyProviderCredentials,
   IEmailProvider,

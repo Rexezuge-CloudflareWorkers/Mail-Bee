@@ -29,7 +29,7 @@ interface ServiceContextOverrides {
 function createServiceContext(env: ServiceEnv, overrides: ServiceContextOverrides = {}): ServiceContext {
   return {
     env,
-    logger: overrides.logger ?? createLogger('service', 'mail-otter'),
+    logger: overrides.logger ?? createLogger('service', 'mail-bee'),
     clock: overrides.clock ?? new SystemClock(),
   };
 }

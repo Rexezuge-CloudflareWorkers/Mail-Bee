@@ -446,16 +446,6 @@ const ContextAuditLogsQuerySchema = z.object({
 
 // ─── Webhooks ───
 
-const FastmailWebhookBodySchema = z.object({
-  emailId: nonEmptyStringSchema('emailId', 512),
-  type: nonEmptyStringSchema('type', 64).optional(),
-  message: nonEmptyStringSchema('message', 2048).optional(),
-});
-
-const FastmailWebhookQuerySchema = z.object({
-  token: nonEmptyStringSchema('token', 256),
-});
-
 const RequestInputSchemas: Record<string, RequestInputSchema> = {
   'POST /user/application': { body: CreateAppBodySchema },
   'PUT /user/application': { body: UpdateAppBodySchema },
@@ -504,7 +494,6 @@ const RequestInputSchemas: Record<string, RequestInputSchema> = {
   'GET /api/oauth2/callback/:applicationId': { query: OAuth2CallbackQuerySchema },
   'GET /api/actions/:actionId': { query: EmailActionCallbackQuerySchema },
   'POST /api/actions/:actionId/execute': { query: EmailActionCallbackQuerySchema },
-  'POST /api/webhooks/fastmail/:applicationId': { query: FastmailWebhookQuerySchema, body: FastmailWebhookBodySchema },
   'POST /api/webhooks/gmail/:applicationId': { query: GmailWebhookQuerySchema, body: GmailWebhookBodySchema },
   'GET /api/webhooks/outlook/:applicationId': { query: OutlookWebhookQuerySchema },
   'POST /api/webhooks/outlook/:applicationId': { query: OutlookWebhookQuerySchema, body: OutlookWebhookBodySchema },
@@ -523,7 +512,6 @@ export {
   DeleteIntegrationBodySchema,
   DismissApplicationErrorBodySchema,
   DigestConfigQuerySchema,
-  FastmailWebhookBodySchema,
   ListActivityQuerySchema,
   ListAnalyticsQuerySchema,
   ListCalendarEventsQuerySchema,
