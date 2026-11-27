@@ -50,7 +50,9 @@ function createProviderApiErrorFromStatus(
   detail: string,
 ): Error {
   const message: string = `${providerName} ${operation} failed (${status.toString()}): ${detail || statusText}`;
-  return isRetryableHttpStatus(status) ? new ProviderApiRetryableError(message) : new ProviderApiNonRetryableError(message);
+  // Carry the status so callers can classify (404/410 = message gone) and log
+  // it without ever interpolating the message, which can contain mailbox data.
+  return isRetryableHttpStatus(status) ? new ProviderApiRetryableError(message, status) : new ProviderApiNonRetryableError(message, status);
 }
 
 function isRetryableHttpStatus(status: number): boolean {

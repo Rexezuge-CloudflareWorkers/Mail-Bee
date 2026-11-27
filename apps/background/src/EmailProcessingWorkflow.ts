@@ -43,7 +43,7 @@ class EmailProcessingWorkflow extends AbstractWorkflowWorker<EmailQueueMessage, 
         { retries: { limit: 3, delay: '10 seconds', backoff: 'exponential' }, timeout: '2 minutes' },
         async () => {
           try {
-            return await service.listGmailMessages(resolved.application, resolved.accessToken, notification.notificationHistoryId);
+            return await service.listGmailMessages(resolved.application, notification.notificationHistoryId);
           } catch (error: unknown) {
             throw EmailProcessingWorkflow.toWorkflowError(error);
           }
