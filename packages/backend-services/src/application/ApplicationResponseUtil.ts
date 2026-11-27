@@ -1,14 +1,12 @@
-import { ApplicationContextDAO, ConnectedApplicationDAO, ProcessedMessageDAO, ProviderSubscriptionDAO } from '@mail-bee/backend-data/dao';
+import { ApplicationContextDAO, ProcessedMessageDAO, ProviderSubscriptionDAO } from '@mail-bee/backend-data/dao';
 import type { D1Queryable } from '@mail-bee/backend-data/utils';
 import type {
   ApplicationContextSummary,
   ConnectedApplicationMetadata,
-  DigestConfig,
   ProcessedMessage,
   ProviderSubscription,
 } from '@mail-bee/shared/model';
 import { BaseUrlUtil } from '@mail-bee/shared/utils';
-import { DigestConfigService } from '../digest/DigestConfigService';
 
 const WEBHOOK_PATH_SEGMENTS: Readonly<Record<string, string>> = {
   'google-gmail': 'gmail',
@@ -50,17 +48,6 @@ class ApplicationResponseUtil {
       contextSummary.lastErrorAt != null &&
       contextSummary.lastErrorAt <= application.contextLastErrorAcknowledgedAt;
 
-    let digestConfig: DigestConfig | null = null;
-    if (env.AES_ENCRYPTION_KEY_SECRET) {
-      try {
-        const masterKey: string = await env.AES_ENCRYPTION_KEY_SECRET.get();
-        const digestService = new DigestConfigService(new ConnectedApplicationDAO(env.DB, masterKey));
-        digestConfig = await digestService.getConfig(application.applicationId);
-      } catch {
-        console.warn(`[ApplicationResponseUtil] Failed to fetch digest config for ${application.applicationId}`);
-      }
-    }
-
     const webhookSegment = this.getWebhookPathSegment(application.providerId);
     const webhookUrl =
       webhookSegment === undefined
@@ -71,7 +58,6 @@ class ApplicationResponseUtil {
 
     return {
       ...application,
-      digestConfig,
       oauth2RedirectUri: `${baseUrl}/api/oauth2/callback/${application.applicationId}`,
       webhookUrl,
       watchStatus: subscription?.status,
@@ -94,7 +80,6 @@ interface ApplicationDecorationEnv {
 }
 
 interface ApplicationResponse extends ConnectedApplicationMetadata {
-  digestConfig?: DigestConfig | null;
   oauth2RedirectUri: string;
   webhookUrl?: string;
   watchStatus?: string;

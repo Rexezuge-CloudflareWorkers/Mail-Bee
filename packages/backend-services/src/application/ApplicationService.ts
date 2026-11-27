@@ -1,13 +1,4 @@
-import {
-  AiDailyUsageDAO,
-  ApplicationContextDAO,
-  ApplicationIntegrationDAO,
-  ConnectedApplicationDAO,
-  IntegrationDeliveryLogDAO,
-  OAuth2AccessTokenCacheDAO,
-} from '@mail-bee/backend-data/dao';
-import type { EmailProcessingRule, IntegrationDeliveryLog, OutboundIntegration } from '@mail-bee/shared/model';
-import { IntegrationService } from '../integration/IntegrationService';
+import { ApplicationContextDAO, ConnectedApplicationDAO, OAuth2AccessTokenCacheDAO } from '@mail-bee/backend-data/dao';
 import { WatchService } from '../subscription/WatchService';
 import type { WatchServiceEnv } from '../subscription/WatchService';
 import { OAuth2AccessTokenService } from '../oauth2/OAuth2AccessTokenService';
@@ -15,29 +6,24 @@ import type { OAuth2AccessTokenServiceEnv } from '../oauth2/OAuth2AccessTokenSer
 import type { UserScope } from '@mail-bee/backend-data/dao';
 import type { ApplicationResponse } from './ApplicationResponseUtil';
 import { ApplicationCrudService } from './ApplicationCrudService';
-import { ApplicationRulesService } from './ApplicationRulesService';
-import { ApplicationIntegrationService } from './ApplicationIntegrationService';
 import type {
   ApplicationServiceDeps,
   ApplicationServiceEnv,
-  CreateIntegrationInput,
   CreateUserApplicationInput,
-  UpdateIntegrationInput,
   UpdateUserApplicationInput,
   UpdateWatchedFolderIdsInput,
 } from './ApplicationServiceTypes';
 
 /**
- * Thin facade over the application domain slices (CRUD / rules / integrations).
+ * Application CRUD facade used by the `/user/application*` routes.
  *
- * Previously a 443-line god-class mixing all three concerns. New code may
- * import the slices directly; this facade preserves the existing public API
- * used by routes and tests.
+ * Mail-Bee does not wire Mail-Otter's rule suggestions or outbound integrations,
+ * so those slices (and the AI/chat/digest services behind them) are gone rather
+ * than kept alive by an unused constructor dependency. What remains is one
+ * cohesive responsibility: the lifecycle of a user's own mailbox connection.
  */
 class ApplicationService {
   private readonly crud: ApplicationCrudService;
-  private readonly rules: ApplicationRulesService;
-  private readonly integrations: ApplicationIntegrationService;
 
   constructor(
     private readonly env: ApplicationServiceEnv,
@@ -48,18 +34,12 @@ class ApplicationService {
     const full: Required<ApplicationServiceDeps> = {
       applicationDAO: async () => new ConnectedApplicationDAO(db, await masterKey()),
       contextDAO: () => Promise.resolve(new ApplicationContextDAO(db)),
-      integrationDAO: async () => new ApplicationIntegrationDAO(db, await masterKey()),
-      deliveryLogDAO: () => Promise.resolve(new IntegrationDeliveryLogDAO(db)),
-      usageDAO: () => Promise.resolve(new AiDailyUsageDAO(db)),
       tokenCacheDAO: async () => new OAuth2AccessTokenCacheDAO(env.OAUTH2_TOKEN_CACHE as KVNamespace, await masterKey()),
       watchService: () => Promise.resolve(new WatchService(env as WatchServiceEnv)),
-      integrationService: () => Promise.resolve(new IntegrationService(env)),
       tokenService: () => Promise.resolve(new OAuth2AccessTokenService(env as OAuth2AccessTokenServiceEnv)),
       ...deps,
     };
     this.crud = new ApplicationCrudService(env, full);
-    this.rules = new ApplicationRulesService(env, full);
-    this.integrations = new ApplicationIntegrationService(full);
   }
 
   public listUserApplications(scope: UserScope, raw: Request): Promise<ApplicationResponse[]> {
@@ -89,46 +69,6 @@ class ApplicationService {
   public acknowledgeApplicationError(scope: UserScope, applicationId: string, errorType: 'processing' | 'context', raw: Request) {
     return this.crud.acknowledgeApplicationError(scope, applicationId, errorType, raw);
   }
-
-  public listIntegrations(scope: UserScope, applicationId: string): Promise<OutboundIntegration[]> {
-    return this.integrations.listIntegrations(scope, applicationId);
-  }
-
-  public createIntegration(scope: UserScope, input: CreateIntegrationInput): Promise<OutboundIntegration> {
-    return this.integrations.createIntegration(scope, input);
-  }
-
-  public updateIntegration(scope: UserScope, input: UpdateIntegrationInput): Promise<OutboundIntegration> {
-    return this.integrations.updateIntegration(scope, input);
-  }
-
-  public deleteIntegration(scope: UserScope, integrationId: string): Promise<void> {
-    return this.integrations.deleteIntegration(scope, integrationId);
-  }
-
-  public testIntegration(scope: UserScope, integrationId: string): Promise<void> {
-    return this.integrations.testIntegration(scope, integrationId);
-  }
-
-  public listIntegrationDeliveries(scope: UserScope, integrationId: string, limit: number): Promise<IntegrationDeliveryLog[]> {
-    return this.integrations.listIntegrationDeliveries(scope, integrationId, limit);
-  }
-
-  public listLabels(scope: UserScope, applicationId: string): Promise<Array<{ id: string; name: string }>> {
-    return this.rules.listLabels(scope, applicationId);
-  }
-
-  public getRules(scope: UserScope, applicationId: string): Promise<EmailProcessingRule[]> {
-    return this.rules.getRules(scope, applicationId);
-  }
-
-  public updateRules(scope: UserScope, applicationId: string, rules: EmailProcessingRule[]) {
-    return this.rules.updateRules(scope, applicationId, rules);
-  }
-
-  public suggestRule(scope: UserScope, applicationId: string, description: string) {
-    return this.rules.suggestRule(scope, applicationId, description);
-  }
 }
 
 const ApplicationServiceFactory = {
@@ -138,15 +78,3 @@ const ApplicationServiceFactory = {
 };
 
 export { ApplicationService, ApplicationServiceFactory };
-export { ApplicationResponseUtil } from './ApplicationResponseUtil';
-export type {
-  ApplicationServiceDeps,
-  ApplicationServiceEnv,
-  CreateIntegrationInput,
-  CreateUserApplicationInput,
-  UpdateIntegrationInput,
-  UpdateUserApplicationInput,
-  UpdateWatchedFolderIdsInput,
-} from './ApplicationServiceTypes';
-
-export { type ApplicationResponse } from './ApplicationResponseUtil';

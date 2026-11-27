@@ -1,54 +1,23 @@
+import { ProcessedMessageDAO } from '@mail-bee/backend-data/dao';
+import type { ListProcessedMessagesOptions } from '@mail-bee/backend-data/dao';
 import type { UserScope } from '@mail-bee/backend-data/dao';
-import { BackgroundTaskRunDAO, ConnectedApplicationDAO, ProcessedMessageDAO, SyncedCalendarEventDAO } from '@mail-bee/backend-data/dao';
-import type {
-  BackgroundTaskRunList,
-  ListTaskRunsOptions,
-  ListProcessedMessagesOptions,
-  ListCalendarEventsOptions,
-} from '@mail-bee/backend-data/dao';
-import type { ProcessedMessageList, SyncedCalendarEventList } from '@mail-bee/shared/model';
 import type { D1Queryable } from '@mail-bee/backend-data/utils';
-import { ConfigurationManager } from '@mail-bee/backend-runtime/config';
-import { BadRequestError, NotFoundError } from '@rexezuge/errors';
-import { CalendarSyncWindow } from '@mail-bee/shared/utils';
-import { ActionStatusSyncUtil, CalendarEventSyncUtil } from '../digest';
-import { OAuth2AccessTokenService } from '../oauth2';
-import { BACKGROUND_TASK_TYPE_ACTION_STATUS_SYNC, BACKGROUND_TASK_TYPE_CALENDAR_SYNC } from '@mail-bee/shared/constants';
+import type { ProcessedMessageList } from '@mail-bee/shared/model';
 
 interface ProcessingServiceEnv {
   DB: D1Queryable;
 }
 
-interface TriggerTaskEnv extends ProcessingServiceEnv {
-  AES_ENCRYPTION_KEY_SECRET: SecretsStoreSecret;
-  ACTION_ENCRYPTION_KEY_SECRET: SecretsStoreSecret;
-  OAUTH2_TOKEN_CACHE: KVNamespace;
-  OAUTH2_TOKEN_REFRESHERS: DurableObjectNamespace;
-  PACKAGE_TRACKING_API_KEY?: string;
-  FLIGHT_TRACKING_API_KEY?: string;
-  OAUTH2_ACCESS_TOKEN_MIN_VALID_SECONDS?: string;
-}
-
-interface TrackingConfig {
-  getPackageTrackingApiKey(): string;
-  getFlightTrackingApiKey(): string;
-}
-
 interface ProcessingServiceDeps {
-  taskRunDAO?: () => Promise<BackgroundTaskRunDAO>;
-  calendarEventDAO?: () => Promise<SyncedCalendarEventDAO>;
   processedMessageDAO?: () => Promise<ProcessedMessageDAO>;
-  applicationDAO?: (masterKey: string) => Promise<ConnectedApplicationDAO>;
-  tokenService?: (env: TriggerTaskEnv) => OAuth2AccessTokenService;
-  config?: (env: unknown) => TrackingConfig;
 }
 
 /**
- * Injectable instance service for background task visibility + manual triggers.
+ * The forwarding log read used by `/user/application/messages`.
  *
- * Static methods remain as a thin facade delegating to a default instance for
- * backward compatibility. New code should resolve via `Tokens.ProcessingService`
- * (`scope.get(...)`) and call the instance methods.
+ * Mail-Otter's task-run and calendar-event views and its manual task triggers
+ * had no Mail-Bee route or cron registration, so they were removed with their
+ * digest/action dependencies rather than retained as unreachable API surface.
  */
 class ProcessingService {
   private readonly deps: Required<ProcessingServiceDeps>;
@@ -59,38 +28,8 @@ class ProcessingService {
   ) {
     const db = env.DB;
     this.deps = {
-      taskRunDAO: () => Promise.resolve(new BackgroundTaskRunDAO(db)),
-      calendarEventDAO: () => Promise.resolve(new SyncedCalendarEventDAO(db)),
-      processedMessageDAO: () => Promise.resolve(new ProcessedMessageDAO(db)),
-      applicationDAO: (masterKey: string) => Promise.resolve(new ConnectedApplicationDAO(db, masterKey)),
-      tokenService: (e: TriggerTaskEnv) => new OAuth2AccessTokenService(e),
-      // Default reads via ConfigurationManager so existing module mocks keep
-      // working; new code may inject `AppConfiguration.fromEnv(env)` instead
-      // (it satisfies the same structural `TrackingConfig` interface).
-      config: (e: unknown) => ({
-        getPackageTrackingApiKey: () => ConfigurationManager.digest.getPackageTrackingApiKey(e),
-        getFlightTrackingApiKey: () => ConfigurationManager.digest.getFlightTrackingApiKey(e),
-      }),
-      ...deps,
+      processedMessageDAO: deps.processedMessageDAO ?? (() => Promise.resolve(new ProcessedMessageDAO(db))),
     };
-  }
-
-  // ─── Static facade (backward compatible) ───
-
-  public static async listTaskRuns(
-    scope: UserScope,
-    options: Pick<ListTaskRunsOptions, 'taskType' | 'applicationId' | 'status' | 'cursor' | 'latestPerType'>,
-    env: ProcessingServiceEnv,
-  ): Promise<BackgroundTaskRunList> {
-    return new ProcessingService(env).listTaskRuns(scope, options);
-  }
-
-  public static async listCalendarEvents(
-    scope: UserScope,
-    options: Pick<ListCalendarEventsOptions, 'applicationId' | 'cursor'>,
-    env: ProcessingServiceEnv,
-  ): Promise<SyncedCalendarEventList> {
-    return new ProcessingService(env).listCalendarEvents(scope, options);
   }
 
   public static async listProcessedMessages(
@@ -99,34 +38,6 @@ class ProcessingService {
     env: ProcessingServiceEnv,
   ): Promise<ProcessedMessageList> {
     return new ProcessingService(env).listProcessedMessages(scope, options);
-  }
-
-  public static async triggerTask(scope: UserScope, taskType: string, applicationId: string, env: TriggerTaskEnv): Promise<void> {
-    return new ProcessingService(env).triggerTask(scope, taskType, applicationId, env);
-  }
-
-  // ─── Instance API (prefer in new code) ───
-
-  public async listTaskRuns(
-    scope: UserScope,
-    options: Pick<ListTaskRunsOptions, 'taskType' | 'applicationId' | 'status' | 'cursor' | 'latestPerType'>,
-  ): Promise<BackgroundTaskRunList> {
-    const dao = await this.deps.taskRunDAO();
-    return dao.listForUser(scope, {
-      taskType: options.taskType,
-      applicationId: options.applicationId,
-      status: options.status,
-      cursor: options.cursor,
-      latestPerType: !options.taskType,
-    });
-  }
-
-  public async listCalendarEvents(
-    scope: UserScope,
-    options: Pick<ListCalendarEventsOptions, 'applicationId' | 'cursor'>,
-  ): Promise<SyncedCalendarEventList> {
-    const dao = await this.deps.calendarEventDAO();
-    return dao.listForUser(scope, { applicationId: options.applicationId, cursor: options.cursor });
   }
 
   public async listProcessedMessages(
@@ -140,38 +51,7 @@ class ProcessingService {
       cursor: options.cursor,
     });
   }
-
-  public async triggerTask(scope: UserScope, taskType: string, applicationId: string, env: TriggerTaskEnv): Promise<void> {
-    if (taskType !== BACKGROUND_TASK_TYPE_CALENDAR_SYNC && taskType !== BACKGROUND_TASK_TYPE_ACTION_STATUS_SYNC) {
-      throw new BadRequestError(`Task type '${taskType}' cannot be triggered manually.`);
-    }
-
-    const masterKey: string = await env.AES_ENCRYPTION_KEY_SECRET.get();
-    const applicationDAO = await this.deps.applicationDAO(masterKey);
-    const application = await applicationDAO.getByIdForUser(applicationId, scope);
-    if (!application) throw new NotFoundError('Connected application not found.');
-
-    if (taskType === BACKGROUND_TASK_TYPE_CALENDAR_SYNC) {
-      // Previously hardcoded to a 48-hour window from `now`, which disagreed
-      // with the cron's `DIGEST_CALENDAR_SYNC_DAYS` and so truncated the synced
-      // range on every manual trigger. The window is anchored to the mailbox's
-      // local midnight so it lines up with the digest's calendar section.
-      const metadata = await applicationDAO.getMetadataByIdForUser(applicationId, scope);
-      const { startIso: windowStartIso, endIso: windowEndIso } = CalendarSyncWindow.build(new Date(), metadata?.timeZone ?? null);
-      const accessToken = await this.deps.tokenService(env).getAccessToken(applicationId);
-      const syncUtil = new CalendarEventSyncUtil(env.DB);
-      await syncUtil.syncForApplication(application, accessToken, windowStartIso, windowEndIso);
-    } else {
-      const config = this.deps.config(env);
-      const packageApiKey = config.getPackageTrackingApiKey();
-      const flightApiKey = config.getFlightTrackingApiKey();
-      const actionKey: string = await env.ACTION_ENCRYPTION_KEY_SECRET.get();
-      const syncUtil = new ActionStatusSyncUtil(env.DB, actionKey);
-      if (packageApiKey) await syncUtil.syncPackageActions(applicationId, packageApiKey);
-      if (flightApiKey) await syncUtil.syncFlightActions(applicationId, flightApiKey);
-    }
-  }
 }
 
 export { ProcessingService };
-export type { ProcessingServiceDeps, ProcessingServiceEnv, TriggerTaskEnv };
+export type { ProcessingServiceDeps, ProcessingServiceEnv };
