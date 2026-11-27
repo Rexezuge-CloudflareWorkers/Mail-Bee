@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Mail-Bee is a Cloudflare Workers product. A signed-in Cloudflare Access user registers their own Gmail/Outlook OAuth client, starts monitoring that mailbox, and every new message is forwarded byte-for-byte to the user's sign-in address through the `EMAIL` send binding.
+Mail-Bee is a Cloudflare Workers product. A signed-in Cloudflare Access user registers their own Gmail/Outlook OAuth client, starts monitoring that mailbox, and every new message is forwarded to the user's sign-in address through the `EMAIL` send binding, with its body and attachments byte-for-byte intact.
 
 ## Commands
 
@@ -43,7 +43,7 @@ Per-request DI: `createRequestScope(env)` and `scope.get(Tokens.X)` from `@mail-
 
 - OAuth credentials are user-supplied and encrypted with `AES_ENCRYPTION_KEY_SECRET`; never log them or put them in vars.
 - Webhook endpoints are public but validate a per-subscription secret / `clientState`; they are deliberately not rate-limited.
-- Forwarding uses the legacy `EmailMessage` API so the original MIME is preserved. Keep `SEND_FROM` on an onboarded domain and enforce the 25 MiB limit.
+- Forwarding uses the legacy `EmailMessage` API. The body is preserved byte-for-byte, but the top-level headers must be rebuilt: Email Sending requires MIME `From` to equal the envelope sender, rejects `Received`, and requires a `Message-ID`. Keep `SEND_FROM` on an onboarded domain and enforce the 25 MiB limit.
 - Free-plan recipients must be verified destination addresses; surface `E_RECIPIENT_PLAN_RESTRICTED` in the forwarding log rather than retrying forever.
 
 ## Index

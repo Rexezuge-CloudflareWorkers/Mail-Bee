@@ -77,6 +77,10 @@ function resolvedFor(app: typeof application | typeof outlookApplication): Resol
   return { application: app as never, recipient: 'current@example.com' };
 }
 
+function bodyOf(raw: string): string {
+  return raw.slice(raw.indexOf('\r\n\r\n') + 4);
+}
+
 describe('ForwardingService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,7 +92,7 @@ describe('ForwardingService', () => {
     mockGetOutlookRaw.mockResolvedValue('Subject: Hello\r\n\r\nBody');
   });
 
-  it('forwards the unchanged MIME to the current sign-in address', async () => {
+  it('sends a routable MIME message to the current sign-in address', async () => {
     const send = vi.fn().mockResolvedValue({ messageId: 'sent-1' });
     const service = makeService(send);
     const resolved = await service.resolve(application.applicationId);
@@ -100,9 +104,37 @@ describe('ForwardingService', () => {
     const message = send.mock.calls[0][0];
     expect(message.from).toBe('forward@mailbee.example');
     expect(message.to).toBe('current@example.com');
-    expect(message.raw).toContain('Subject: Hello\r\n\r\nBody');
+    // Email Sending requires the MIME From to equal the envelope sender.
+    expect(message.raw).toContain('From: forward@mailbee.example\r\n');
+    expect(message.raw).toContain('Message-ID: <');
+    expect(message.raw).toContain('Subject: Hello\r\n');
+    expect(bodyOf(message.raw)).toBe('Body');
     expect(message.raw).toContain('X-Mail-Bee-Forwarded: yes');
     expect(mockMarkSummarized).toHaveBeenCalledWith(application.applicationId, 'provider-message-1');
+  });
+
+  it('drops Outlook transport headers before handing the message to Email Sending', async () => {
+    mockGetOutlookRaw.mockResolvedValue(
+      [
+        'Received: from mail.example.com by mx.example.com; Fri, 27 Nov 2026 01:00:00 +0000',
+        'From: Original Sender <sender@other.example>',
+        'Subject: Outlook forward',
+        '',
+        'Body',
+      ].join('\r\n'),
+    );
+    const send = vi.fn().mockResolvedValue({ messageId: 'sent-2' });
+    const service = makeService(send);
+
+    expect(await service.forwardMessage(resolvedFor(outlookApplication), 'outlook-1')).toBe('forwarded');
+
+    const message = send.mock.calls[0][0];
+    expect(message.from).toBe('forward@mailbee.example');
+    expect(message.raw.split('\r\n\r\n', 1)[0]).not.toContain('Received:');
+    expect(message.raw).toContain('Reply-To: sender@other.example');
+    expect(message.raw).toContain('X-Mail-Bee-Original-From: Original Sender <sender@other.example>');
+    expect(message.raw).toContain('Subject: Outlook forward\r\n');
+    expect(bodyOf(message.raw)).toBe('Body');
   });
 
   it('resolves a fresh token inside the forward step instead of persisting one', async () => {
@@ -140,7 +172,7 @@ describe('ForwardingService', () => {
   });
 
   it('skips messages larger than the Email Service size limit', async () => {
-    mockGetRaw.mockResolvedValue('x'.repeat(25 * 1024 * 1024 + 1));
+    mockGetRaw.mockResolvedValue(`Subject: Big\r\n\r\n${'x'.repeat(25 * 1024 * 1024 + 1)}`);
     const send = vi.fn();
     const service = makeService(send);
     expect(await service.forwardMessage(resolvedFor(application), 'oversized')).toBe('skipped');

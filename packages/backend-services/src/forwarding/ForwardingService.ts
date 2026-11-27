@@ -18,6 +18,7 @@ import {
 } from '@rexezuge/errors';
 import { OAuth2AccessTokenService } from '../oauth2/OAuth2AccessTokenService';
 import type { OAuth2AccessTokenServiceEnv } from '../oauth2/OAuth2AccessTokenService';
+import { bareAddress, buildForwardedMime } from './ForwardedMime';
 
 /**
 Email Service rejects messages larger than 25 MiB, headers included.
@@ -71,9 +72,11 @@ type ForwardingStage = 'fetch' | 'send' | 'record';
  * The product feature: take a message id from a provider webhook, fetch the
  * original RFC 5322 bytes, and hand them to Cloudflare Email Sending.
  *
- * Nothing here summarises or rewrites the body. The only modification is a pair
- * of `X-Mail-Bee-*` tracing headers, which every mail transport is allowed to
- * add and which makes a forwarded copy identifiable in the recipient's inbox.
+ * The body, attachments and their encodings are forwarded byte-for-byte. The
+ * top-level header block is rebuilt by `buildForwardedMime`: Email Sending
+ * requires the MIME `From` to equal the envelope sender, rejects `Received`,
+ * and requires a `Message-ID`, none of which a stored provider message reliably
+ * satisfies.
  *
  * The three phases (fetch, send, record) are handled separately on purpose. A
  * provider fetch failure is not a send failure, a permanent provider error must
@@ -159,7 +162,20 @@ class ForwardingService {
       return this.handleFetchFailure(processedDAO, application, providerMessageId, error);
     }
 
-    const byteLength: number = new TextEncoder().encode(raw).byteLength;
+    let sender: string;
+    let forwarded: string;
+    try {
+      sender = this.sender();
+      forwarded = buildForwardedMime(raw, {
+        envelopeFrom: sender,
+        recipient,
+        mailbox: application.providerEmail ?? application.applicationId,
+      });
+    } catch (error: unknown) {
+      return this.handleSendFailure(processedDAO, application.applicationId, providerMessageId, error);
+    }
+
+    const byteLength: number = new TextEncoder().encode(forwarded).byteLength;
     if (byteLength > MAX_FORWARD_BYTES) {
       await processedDAO.markSkipped(
         application.applicationId,
@@ -169,15 +185,9 @@ class ForwardingService {
       return 'skipped';
     }
 
-    const traced: string = [
-      'X-Mail-Bee-Forwarded: yes',
-      `X-Mail-Bee-Mailbox: ${application.providerEmail ?? application.applicationId}`,
-      raw,
-    ].join('\r\n');
-
     try {
       const { EmailMessage } = await import('cloudflare:email');
-      await this.env.EMAIL.send(new EmailMessage(this.sender(), recipient, traced));
+      await this.env.EMAIL.send(new EmailMessage(sender, recipient, forwarded));
     } catch (error: unknown) {
       return this.handleSendFailure(processedDAO, application.applicationId, providerMessageId, error);
     }
@@ -323,7 +333,7 @@ class ForwardingService {
     if (!configured) {
       throw new NonRetryableError('SEND_FROM is not configured. Set it to an address on an onboarded sending domain.');
     }
-    return configured;
+    return bareAddress(configured);
   }
 
   private async fetchRaw(application: ConnectedApplication, accessToken: string, providerMessageId: string): Promise<string> {
