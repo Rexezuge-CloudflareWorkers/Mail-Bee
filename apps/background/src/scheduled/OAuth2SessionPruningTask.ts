@@ -1,7 +1,7 @@
 import { OAuth2AuthorizationSessionDAO } from '@mail-bee/backend-data/dao';
 import type { D1Queryable } from '@mail-bee/backend-data/utils';
 import { AbstractPruningTask } from './AbstractPruningTask';
-import type { IEnv } from './IScheduledTask';
+import type { TaskEnv } from './MailBeeScheduledTask';
 
 class OAuth2SessionPruningTask extends AbstractPruningTask<OAuth2SessionPruningTaskEnv> {
   // OAuth2 sessions expire by their own expires_at/consumed_at markers rather than a
@@ -15,7 +15,7 @@ class OAuth2SessionPruningTask extends AbstractPruningTask<OAuth2SessionPruningT
   }
 }
 
-interface OAuth2SessionPruningTaskEnv extends IEnv {
+interface OAuth2SessionPruningTaskEnv extends TaskEnv {
   DB: D1Database;
 }
 

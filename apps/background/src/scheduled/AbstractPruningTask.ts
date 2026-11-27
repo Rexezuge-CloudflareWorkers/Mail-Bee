@@ -1,9 +1,9 @@
 import { computeUnixCutoffSeconds, createD1SessionEnv, pruneInBatches } from '@mail-bee/backend-data/utils';
 import type { D1Queryable } from '@mail-bee/backend-data/utils';
-import { IScheduledTask } from './IScheduledTask';
-import type { IEnv, TaskRunSummary } from './IScheduledTask';
+import { MailBeeScheduledTask } from './MailBeeScheduledTask';
+import type { TaskEnv, TaskRunSummary } from './MailBeeScheduledTask';
 
-interface PruningTaskEnv extends IEnv {
+interface PruningTaskEnv extends TaskEnv {
   DB: D1Database;
 }
 
@@ -12,7 +12,7 @@ interface PruningTaskEnv extends IEnv {
 // this base computes the unix cutoff, drains via pruneInBatches, and returns a TaskRunSummary.
 // pruneBatch receives the task env (some phases, e.g. EmailAction, need secrets from env),
 // the session DB, the precomputed cutoff, and the batch size.
-abstract class AbstractPruningTask<TEnv extends PruningTaskEnv> extends IScheduledTask<TEnv> {
+abstract class AbstractPruningTask<TEnv extends PruningTaskEnv> extends MailBeeScheduledTask<TEnv> {
   protected abstract getRetentionDays(env: TEnv): number;
 
   protected abstract pruneBatch(env: TEnv, db: D1Queryable, cutoff: number, batchSize: number): Promise<number>;

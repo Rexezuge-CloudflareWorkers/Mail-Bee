@@ -5,10 +5,10 @@ import { Tokens, createRequestScope } from '@mail-bee/backend-services/compositi
 import { OAuth2AccessTokenService } from '@mail-bee/backend-services/oauth2';
 import { BACKGROUND_TASK_TYPE_OAUTH2_REFRESH } from '@mail-bee/shared/constants';
 import { TimestampUtil } from '@mail-bee/shared/utils';
-import { IScheduledTask } from './IScheduledTask';
-import type { IEnv, TaskRunSummary } from './IScheduledTask';
+import { MailBeeScheduledTask } from './MailBeeScheduledTask';
+import type { TaskEnv, TaskRunSummary } from './MailBeeScheduledTask';
 
-class OAuth2AccessTokenRefreshTask extends IScheduledTask<OAuth2AccessTokenRefreshTaskEnv> {
+class OAuth2AccessTokenRefreshTask extends MailBeeScheduledTask<OAuth2AccessTokenRefreshTaskEnv> {
   protected getTaskType(): string {
     return BACKGROUND_TASK_TYPE_OAUTH2_REFRESH;
   }
@@ -47,7 +47,7 @@ class OAuth2AccessTokenRefreshTask extends IScheduledTask<OAuth2AccessTokenRefre
   }
 }
 
-interface OAuth2AccessTokenRefreshTaskEnv extends IEnv {
+interface OAuth2AccessTokenRefreshTaskEnv extends TaskEnv {
   DB: D1Database;
   AES_ENCRYPTION_KEY_SECRET: SecretsStoreSecret;
   OAUTH2_TOKEN_CACHE: KVNamespace;

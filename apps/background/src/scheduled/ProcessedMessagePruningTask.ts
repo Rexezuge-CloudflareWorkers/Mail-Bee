@@ -3,7 +3,7 @@ import { ProcessedMessageDAO } from '@mail-bee/backend-data/dao';
 import type { D1Queryable } from '@mail-bee/backend-data/utils';
 import { ConfigurationManager } from '@mail-bee/backend-runtime/config';
 import { AbstractPruningTask } from './AbstractPruningTask';
-import type { IEnv } from './IScheduledTask';
+import type { TaskEnv } from './MailBeeScheduledTask';
 
 class ProcessedMessagePruningTask extends AbstractPruningTask<ProcessedMessagePruningTaskEnv> {
   protected getRetentionDays(env: ProcessedMessagePruningTaskEnv): number {
@@ -19,7 +19,7 @@ class ProcessedMessagePruningTask extends AbstractPruningTask<ProcessedMessagePr
   }
 }
 
-interface ProcessedMessagePruningTaskEnv extends IEnv {
+interface ProcessedMessagePruningTaskEnv extends TaskEnv {
   DB: D1Database;
   PROCESSED_MESSAGE_RETENTION_DAYS?: string;
 }
