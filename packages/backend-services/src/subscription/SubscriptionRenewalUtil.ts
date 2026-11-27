@@ -4,7 +4,7 @@ import type { D1Queryable } from '@mail-bee/backend-data/utils';
 import { GmailProviderUtil } from '@mail-bee/provider-clients/gmail';
 import { WebhookSecurityUtil } from '@mail-bee/provider-clients/webhook';
 import type { ConnectedApplication, ProviderSubscription } from '@mail-bee/shared/model';
-import { TimestampUtil } from '@mail-bee/shared/utils';
+import { ErrorSanitizationUtil, TimestampUtil, logTokenAdjacentError } from '@mail-bee/shared/utils';
 import { ConfigurationManager } from '@mail-bee/backend-runtime/config';
 import { ProviderApiNonRetryableError, RetryableError } from '@rexezuge/errors';
 import { OAuth2AccessTokenService } from '../oauth2/OAuth2AccessTokenService';
@@ -36,13 +36,21 @@ class SubscriptionRenewalUtil {
           await this.renewViaInterface(subscription, applicationDAO, subscriptionDAO);
         }
       } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
+        const retryable: boolean = error instanceof RetryableError;
+        logTokenAdjacentError('warn', `[SubscriptionRenewal] ${retryable ? 'retryable' : 'permanent'} failure`, {
+          applicationId: subscription.applicationId,
+          subscriptionId: subscription.subscriptionId,
+        });
+        // `last_error` is surfaced to the mailbox owner. An OAuth/Graph failure
+        // can embed a bearer token or a signed URL in its message, so persist
+        // the redacted form and keep the classification in the log instead.
+        const message: string = ErrorSanitizationUtil.sanitizeErrorForLogging(error);
         const baseDelay = ConfigurationManager.getRenewalRetryBaseDelaySeconds(this.env);
         const maxDelay = ConfigurationManager.getRenewalRetryMaxDelaySeconds(this.env);
         const currentCount = subscription.renewalRetryCount;
         const delay = Math.min(baseDelay * Math.pow(2, currentCount), maxDelay);
         const nextRetryAt = now + delay;
-        if (error instanceof RetryableError) {
+        if (retryable) {
           await subscriptionDAO.recordTransientError(subscription.subscriptionId, message, nextRetryAt);
         } else {
           await subscriptionDAO.markError(subscription.subscriptionId, message, nextRetryAt);
@@ -91,7 +99,7 @@ class SubscriptionRenewalUtil {
       try {
         result = await provider.renewWatch(credentials, subscription.externalSubscriptionId, expiresAt);
       } catch (error: unknown) {
-        if (error instanceof ProviderApiNonRetryableError && /\(404\)/.test(error.message)) {
+        if (error instanceof ProviderApiNonRetryableError && error.status === 404) {
           const baseUrl: string = ConfigurationManager.getPublicBaseUrl(this.env);
           if (!baseUrl) throw error;
           const clientState: string = WebhookSecurityUtil.generateSecret().slice(0, 128);
