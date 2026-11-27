@@ -10,7 +10,7 @@ The repo is a trimmed descendant of Mail-Otter: it keeps that project's kit-base
 2. You add a mailbox with your **own** Google or Microsoft OAuth client credentials. Credentials are encrypted with AES-GCM before they reach D1.
 3. You complete OAuth consent (PKCE + hashed state), then start monitoring. Mail-Bee creates a Gmail watch on your Pub/Sub topic or a Microsoft Graph inbox subscription.
 4. A provider webhook (validated by a per-subscription secret / `clientState`) enqueues a notification.
-5. The Workflow resolves the account and access token, fetches the original RFC 5322 message (Gmail `format=RAW`, Graph `$value`), deduplicates it in `processed_messages`, and calls `env.EMAIL.send(new EmailMessage(SEND_FROM, yourEmail, raw))`. The only addition is an `X-Mail-Bee-Forwarded` tracing header.
+5. The Workflow resolves the account and access token, fetches the original RFC 5322 message (Gmail `format=RAW`, Graph `$value`), deduplicates it in `processed_messages`, and calls `env.EMAIL.send(new EmailMessage(SEND_FROM, yourEmail, raw))`. The body, attachments and encodings are preserved byte-for-byte; the top-level header block is rebuilt so it satisfies Email Sending: `From` becomes `SEND_FROM`, `Received`/`DKIM`/`Return-Path` and other transport headers are dropped, a `Message-ID` and `Date` are added, and the original sender is kept in `Reply-To` and `X-Mail-Bee-Original-From`.
 6. Cron renews OAuth tokens and expiring mailbox subscriptions.
 
 ## Before you deploy
@@ -19,7 +19,7 @@ The repo is a trimmed descendant of Mail-Otter: it keeps that project's kit-base
 | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Workers account with D1, KV, Queues, Durable Objects, Workflows and Secrets Store | Runtime bindings                                                                                                                                                                          |
 | A **Cloudflare Access** application protecting `/user/*`                          | Sign-in. Set `POLICY_AUD` and `TEAM_DOMAIN`.                                                                                                                                              |
-| An **onboarded Email Sending domain**                                             | The envelope sender (`SEND_FROM`) must be an address on it.                                                                                                                               |
+| An **onboarded Email Sending domain**                                             | `SEND_FROM` must be a bare address on it. Deploy refuses an empty placeholder; it is also the MIME `From` header of forwarded mail.                                                       |
 | A **verified destination address** equal to your sign-in email                    | On the Workers Free plan Email Sending may only deliver to verified destination addresses; other recipients fail with `E_RECIPIENT_PLAN_RESTRICTED`. This is shown in the forwarding log. |
 | Your own Google / Microsoft OAuth app                                             | Mail-Bee does not ship global client credentials.                                                                                                                                         |
 

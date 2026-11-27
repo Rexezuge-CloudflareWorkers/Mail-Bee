@@ -9,6 +9,6 @@ Product areas:
 - `oauth2` — state + PKCE sessions, token exchange/refresh through the DO, encrypted KV cache.
 - `subscription` — Gmail watch / Graph subscription creation, renewal and stop.
 - `webhook` — validate provider secrets and enqueue notifications.
-- `forwarding` — the Mail-Bee feature. `ForwardingService` resolves the account, fetches raw MIME through `provider-clients`, sends it through `env.EMAIL`, and records the outcome.
+- `forwarding` — the Mail-Bee feature. `ForwardingService` resolves the account, fetches raw MIME through `provider-clients`, rebuilds the top-level headers with `buildForwardedMime` (body stays byte-for-byte), sends it through `env.EMAIL`, and records the outcome.
 
 Token-adjacent code must use `logTokenAdjacentError` and never interpolate a caught provider/OAuth error into a log line.

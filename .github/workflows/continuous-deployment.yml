@@ -64,6 +64,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # A template placeholder or a missing vars patch deploys a worker that
+      # cannot forward anything: Email Sending needs a real envelope sender.
+      - name: Validate Sending Address
+        uses: ./.github/actions/retry-step
+        with:
+          command: pnpm exec tsx scripts/deploy/validate-send-from.ts
+          max_attempts: '3'
+
       # Creates only secrets that are absent; an existing key is never overwritten.
       # The AES key is generated with WebCrypto and passed to wrangler on stdin, so it
       # never appears in the process table or in a log line.
