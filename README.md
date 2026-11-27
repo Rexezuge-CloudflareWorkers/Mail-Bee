@@ -46,19 +46,64 @@ pnpm exec wrangler dev --config ./apps/api/wrangler.template.jsonc
 
 `pnpm install` generates `worker-configuration.d.ts` and the SPA shell stub. For a real end-to-end send, use `wrangler dev --remote` so the Email Sending binding and the other bindings are live. Set `DEV_AUTH_EMAIL` locally to bypass Access with a single test identity — never set it in a deployed environment.
 
-Copy `apps/api/wrangler.template.jsonc` to `wrangler.jsonc` for your deployment, replace the placeholder database/KV/secret-store IDs, set `PUBLIC_BASE_URL` to the Worker's public origin and `SEND_FROM` to your sending address, then:
+## Deployment via GitHub Actions
+
+`Continuous Integration` runs on pull requests, pushes to `main`, manual dispatch, and the `Upstream Sync Integration` event. `Continuous Deployment` runs after CI succeeds on `main`, and can also be started from **Actions → Continuous Deployment → Run workflow** or by dispatching `Upstream Sync Deployment` with an optional `client_payload` of `branch` and `sha`. Both workflows resolve the triggering SHA before checkout, so a deployment always publishes the commit CI actually verified.
+
+The deploy job materializes the gitignored root `wrangler.jsonc` from the `WRANGLER_JSONC` variable (or falls back to `apps/api/wrangler.template.jsonc`), applies the two patch variables, refuses a config that omits a binding or var the template declares, and provisions missing D1 / KV / Secrets Store resources. It then creates any absent Secrets Store secret, applies migrations, builds the SPA, runs a dry-run deploy, and deploys the Worker — retrying each network step. A second job builds the SPA, ensures the Pages project exists, and deploys `apps/web/dist` with the `API_WORKER` service binding to the Worker; `functions/[[path]].ts` proxies browser requests through it.
+
+### Required GitHub secrets and variables
+
+| Kind     | Name                                            | Purpose                                                                                          |
+| -------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Secret   | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Wrangler access for deploy and backup.                                                           |
+| Variable | `WRANGLER_JSONC`                                | Full contents of your root `wrangler.jsonc`. Empty means the template is copied and provisioned. |
+| Variable | `WRANGLER_PATCH_JSON`                           | JSON object merged into the config's top level (e.g. `routes`, `vars`). Never put secrets here.  |
+| Variable | `WRANGLER_VARS_PATCH_JSON`                      | JSON object of string values merged into `vars` (e.g. `POLICY_AUD`, `TEAM_DOMAIN`, `SEND_FROM`). |
+| Variable | `CLOUDFLARE_PAGES_PROJECT_NAME`                 | Pages project name; defaults to `mail-bee-web`.                                                  |
+
+Set `PUBLIC_BASE_URL` to the Worker's public origin and `SEND_FROM` to an address on your onboarded sending domain, either in `WRANGLER_JSONC` or through `WRANGLER_VARS_PATCH_JSON`.
+
+### Manual deployment
+
+Copy `apps/api/wrangler.template.jsonc` to a root `wrangler.jsonc`, replace the placeholder database / KV / secret-store IDs, then:
 
 ```bash
-pnpm exec wrangler d1 migrations apply DB --remote
-pnpm exec wrangler deploy --config ./apps/api/wrangler.template.jsonc
+pnpm exec wrangler d1 migrations apply mail-bee-db --remote --config ./wrangler.jsonc
+pnpm exec wrangler deploy --config ./wrangler.jsonc
 ```
+
+Run `pnpm --filter @mail-bee/web build` first so the embedded SPA shell is current.
+
+## Database backups
+
+`Backup D1 Database` exports the deployed D1 database daily at 04:15 UTC and on manual dispatch. It is off until you configure at least one destination. Every configured destination requires `BACKUP_ENCRYPTION_KEY` — exports contain user addresses, OAuth sessions and encrypted credential blobs, so an unencrypted dump is a working set of user data.
+
+| Secret                                                  | Purpose                                                                                |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `BACKUP_ENCRYPTION_KEY`                                 | Passphrase for AES-256-CBC + PBKDF2 encryption (required for any destination).         |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET` | S3-compatible destination (R2, MinIO, B2, …). Optional `S3_ENDPOINT`, `S3_REGION`.     |
+| `WEBDAV_URL`, `WEBDAV_USER`, `WEBDAV_PASSWORD`          | WebDAV destination. Optional `WEBDAV_VENDOR`, `WEBDAV_BASE_PATH` (default `mail-bee`). |
+| `BACKUP_RETENTION_DAYS`                                 | Prune age for old artifacts; defaults to 30.                                           |
+
+Artifacts are named `mail-bee_prod_<UTC timestamp>.sql.xz.enc` and live under `mail-bee/production` in S3 or under the WebDAV base path. To restore, download an artifact, decrypt with `openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass env:BACKUP_ENCRYPTION_KEY`, decompress with `xz -d`, and import the SQL with `wrangler d1 execute`. The export job refuses to back up a database that provisioning created in the same run — such a database holds no user data.
+
+`Backup Main Branch` mirrors `main` to Azure DevOps or GitLab on push and monthly, when the corresponding `BACKUP_REPO_*_SSH_KEY` and `BACKUP_REPO_*_REPO_URL` secrets are set. Forks skip this workflow.
+
+## Repository automation
+
+- **Dependabot** opens weekly npm update PRs; `Continuous Integration` enables auto-merge once every check passes.
+- **Upstream Sync** runs weekly for forks, pulling `main` from `Rexezuge-CloudflareWorkers/Mail-Bee` and dispatching CI (then CD) when new commits arrive. The **Sync fork** button does not fire `push`, so it does not trigger workflows; use **Actions → Continuous Deployment → Run workflow** in that case.
+- **Scheduled Version Update** commits a timestamp to `.github/.version` twice a month.
 
 ## Checks
 
 ```bash
-pnpm run checks        # typecheck, lint, format, migration lock, unit + SPA tests
-pnpm run build         # SPA build (also regenerates the embedded shell)
+pnpm run build          # SPA build (also regenerates the embedded shell)
+pnpm run checks         # typecheck, lint, format, migration lock, SPA shell, unit + SPA tests
 ```
+
+`verify:spa-shell` requires a build first: a fresh clone carries only an empty `spa-shell.ts` stub, so verification without `pnpm run build` is meant to fail.
 
 ## Layout
 
